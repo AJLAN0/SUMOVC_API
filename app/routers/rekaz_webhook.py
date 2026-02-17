@@ -21,30 +21,34 @@ logger = logging.getLogger("app.rekaz_webhook")
 
 
 def _enforce_rekaz_auth(authorization: str | None, tenant: str | None) -> None:
-    expected_auth = f"Basic {settings.REKAZ_BASIC_AUTH}"
-    if not authorization or authorization.strip() != expected_auth:
+    # Rekaz ما يرسل Authorization
+    # نخلي __tenant اختياري/أو نتحقق منه حسب رغبتك
+
+    if settings.REKAZ_TENANT_ID and tenant and tenant.strip() != settings.REKAZ_TENANT_ID:
         logger.warning(
-            "rekaz_auth_failed_authorization",
-            extra={
-                "extra": {
-                    "received": authorization[:20] + "..." if authorization and len(authorization) > 20 else authorization,
-                    "expected_prefix": "Basic ****",
-                }
-            },
+            "rekaz_tenant_mismatch",
+            extra={"extra": {"received_tenant": tenant, "expected_tenant": settings.REKAZ_TENANT_ID}},
         )
-        raise HTTPException(status_code=401, detail="Unauthorized")
-    if not tenant or tenant.strip() != settings.REKAZ_TENANT_ID:
-        logger.warning(
-            "rekaz_auth_failed_tenant",
-            extra={
-                "extra": {
-                    "received_tenant": tenant,
-                    "expected_tenant": settings.REKAZ_TENANT_ID,
-                }
-            },
-        )
-        raise HTTPException(status_code=401, detail="Unauthorized")
-    logger.debug("rekaz_auth_passed")
+        # تقدر تخليها return أو ترفض 401 حسب سياستك
+        return
+
+    # Authorization اختياري: إذا جا وتبي تتحقق منه
+    if authorization:
+        expected_auth = f"Basic {settings.REKAZ_BASIC_AUTH}"
+        if authorization.strip() != expected_auth:
+            logger.warning(
+                "rekaz_auth_invalid_but_ignored",
+                extra={
+                    "extra": {
+                        "received": authorization[:20] + "..." if len(authorization) > 20 else authorization,
+                        "expected_prefix": "Basic ****",
+                    }
+                },
+            )
+            return
+
+    logger.debug("rekaz_guard_checked")
+
 
 
 async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
@@ -313,17 +317,12 @@ async def rekaz_webhook(
 ):
     request_id = request.state.request_id
 
-    logger.info(
-        "rekaz_webhook_received",
-        extra={"extra": {"request_id": request_id}},
-    )
+    logger.info("rekaz_webhook_received", extra={"extra": {"request_id": request_id}})
+
 
     _enforce_rekaz_auth(authorization, tenant)
 
-    logger.info(
-        "rekaz_webhook_auth_passed",
-        extra={"extra": {"request_id": request_id}},
-    )
+    logger.info("rekaz_webhook_guard_checked", extra={"extra": {"request_id": request_id}})
 
     try:
         body = await request.body()
