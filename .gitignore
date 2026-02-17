@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+
+# Keep .env.example tracked
+!.env.example
+
+# DB
+*.sqlite3
+*.db
