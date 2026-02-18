@@ -1,5 +1,6 @@
 import logging
 import re
+from datetime import datetime
 
 logger = logging.getLogger("app.rekaz")
 
@@ -10,30 +11,26 @@ EVENT_TEMPLATE_MAP = {
     "ReservationConfirmedEvent": "reservation_confirmed",
     "ReservationCancelledEvent": "reservation_cancelled",
     "ReservationReminderEvent": "reservation_reminder",
-    "ReservationCompletedEvent": "reservation_confirmed",   # same template
-    "ReservationDoneEvent": "reservation_confirmed",        # same template
-    "ReservationUpdatedEvent": "reservation_confirmed",     # same template
+    # "ReservationCompletedEvent": "reservation_confirmed",   # same template
+    # "ReservationDoneEvent": "reservation_confirmed",        # same template
+    # "ReservationUpdatedEvent": "reservation_confirmed",     # same template
 
     # Admin-facing
-    "AdminReservationCreatedEvent": "admin_reservation_confirmed",
+    # "AdminReservationCreatedEvent": "admin_reservation_confirmed",
     "AdminReservationConfirmedEvent": "admin_reservation_confirmed",
-    "AdminReservationCancelledEvent": "reservation_cancelled",
+    # "AdminReservationCancelledEvent": "reservation_cancelled",
 }
 
 # ── Template → ordered parameter names ─────────────────────────────────
 TEMPLATE_PARAM_SPECS: dict[str, list[str]] = {
     # client – confirmed / done / updated / completed
     "reservation_confirmed": [
-        "customer_name",
-        "product_name",
-        "reservation_date",
-        "start_time",
-        "end_time",
-        "location_link",
-        "location_text",
-        "important_notes",
-        "invoice_link",
-        "meeting_link",
+        "customer_name",      # {{1}}
+        "product_name",       # {{2}}
+        "reservation_date",   # {{3}}
+        "start_time",         # {{4}}
+        "end_time",           # {{5}}
+        "invoice_link",       # {{6}}
     ],
 
     # client – reminder
@@ -64,6 +61,9 @@ TEMPLATE_PARAM_SPECS: dict[str, list[str]] = {
     # welcome (no body params)
     "welcome": [],
 }
+
+# ── Default fallback spec (if template not in TEMPLATE_PARAM_SPECS) ────
+_FALLBACK_SPEC = ["customer_name", "product_name", "reservation_date", "start_time"]
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────
@@ -98,10 +98,34 @@ def normalize_phone(phone: str | None) -> str | None:
     return digits
 
 
-# ── Extract all known fields from Rekaz payload ────────────────────────
+# ── Date / time parsing & formatting ───────────────────────────────────
+
+def _parse_dt(value: str | None) -> datetime | None:
+    """Parse an ISO-ish datetime string (with or without trailing Z)."""
+    if not value:
+        return None
+    try:
+        if value.endswith("Z"):
+            value = value.replace("Z", "+00:00")
+        return datetime.fromisoformat(value)
+    except Exception:
+        return None
+
+
+def _fmt_date(dt: datetime | None) -> str:
+    """YYYY-MM-DD"""
+    return dt.strftime("%Y-%m-%d") if dt else ""
+
+
+def _fmt_time(dt: datetime | None) -> str:
+    """HH:MM (24-hour)"""
+    return dt.strftime("%H:%M") if dt else ""
+
+
+# ── Case-insensitive key lookup ────────────────────────────────────────
 
 def _ci(d: dict, *keys: str):
-    """Case-insensitive dict lookup – tries each key as-is, then lower, then title."""
+    """Try each key as-is, then lower, then Title-cased."""
     for key in keys:
         for variant in (key, key.lower(), key[0].upper() + key[1:] if key else key):
             if variant in d:
@@ -109,30 +133,42 @@ def _ci(d: dict, *keys: str):
     return None
 
 
+# ── Extract all known fields from Rekaz payload ────────────────────────
+
 def extract_fields(payload: dict) -> dict[str, str]:
     """
     Pull every field the templates might need out of a Rekaz webhook payload
     and return a flat ``{param_name: value}`` dict.
+    Dates are parsed and formatted so templates receive clean YYYY-MM-DD / HH:MM.
     """
     data = payload.get("Data") or payload.get("data") or {}
     customer = data.get("customer") or data.get("Customer") or {}
+
+    # ── Parse raw datetime strings ──
+    start_raw = _ci(data, "startDate", "StartDate", "reservationDate", "ReservationDate")
+    end_raw = _ci(data, "endDate", "EndDate")
+
+    start_dt = _parse_dt(start_raw)
+    end_dt = _parse_dt(end_raw)
 
     fields: dict[str, str] = {
         "customer_name":              _ci(customer, "name", "Name") or "",
         "reservation_number":         str(_ci(data, "number", "Number", "reservationNumber", "ReservationNumber") or ""),
         "product_name":               _ci(data, "productName", "ProductName") or "",
-        "reservation_date":           _ci(data, "startDate", "StartDate", "reservationDate", "ReservationDate") or "",
-        "start_time":                 _ci(data, "startTime", "StartTime", "startDate", "StartDate") or "",
-        "end_time":                   _ci(data, "endTime", "EndTime", "endDate", "EndDate") or "",
-        "location_link":              _ci(data, "locationLink", "LocationLink") or "",
-        "location_text":              _ci(data, "locationText", "LocationText", "location", "Location") or "",
-        "important_notes":            _ci(data, "importantNotes", "ImportantNotes", "notes", "Notes") or "",
-        "invoice_link":               _ci(data, "invoiceLink", "InvoiceLink") or "",
-        "meeting_link":               _ci(data, "meetingLink", "MeetingLink") or "",
-        "reservation_after_minutes":  str(_ci(data, "reservationAfterMinutes", "ReservationAfterMinutes", "afterMinutes") or ""),
-        "allowed_late_minutes":       str(_ci(data, "allowedLateMinutes", "AllowedLateMinutes") or ""),
-        "cancel_reason":              _ci(data, "cancelReason", "CancelReason", "cancellationReason") or "",
+
+        # Formatted date / time
+        "reservation_date":           _fmt_date(start_dt),
+        "start_time":                 _fmt_time(start_dt),
+        "end_time":                   _fmt_time(end_dt),
+
+        # Invoice — many possible key names from Rekaz
+        "invoice_link":               _ci(data, "invoiceUrl", "InvoiceUrl", "invoiceLink", "InvoiceLink", "invoice", "Invoice") or "",
+
+        "cancel_reason":              _ci(data, "cancelReason", "CancelReason", "cancellationReason", "CancellationReason") or "",
         "branch_name":                _ci(data, "branchName", "BranchName") or "",
+
+        "reservation_after_minutes":  str(_ci(data, "reservationAfterMinutes", "ReservationAfterMinutes", "afterMinutes", "AfterMinutes") or ""),
+        "allowed_late_minutes":       str(_ci(data, "allowedLateMinutes", "AllowedLateMinutes") or ""),
     }
 
     logger.debug("extract_fields_result", extra={"extra": {"fields": fields}})
@@ -143,10 +179,20 @@ def extract_fields(payload: dict) -> dict[str, str]:
 
 def build_template_parameters(template_name: str, fields: dict[str, str]) -> list[str]:
     """
-    Given a template name, look up the ordered param spec and return a list
-    of values in the correct order (empty string for any missing field).
+    Look up the ordered param spec for *template_name* and return a list of
+    values in the correct order (empty string for any missing field).
+
+    If the template is not found in TEMPLATE_PARAM_SPECS a fallback spec is
+    used and a warning is logged so the issue is visible.
     """
-    spec = TEMPLATE_PARAM_SPECS.get(template_name, [])
+    spec = TEMPLATE_PARAM_SPECS.get(template_name)
+    if spec is None:
+        logger.warning(
+            "template_spec_missing",
+            extra={"extra": {"template_name": template_name, "fallback_spec": _FALLBACK_SPEC}},
+        )
+        spec = _FALLBACK_SPEC
+
     params = [fields.get(key, "") for key in spec]
     logger.info(
         "template_parameters_built",
