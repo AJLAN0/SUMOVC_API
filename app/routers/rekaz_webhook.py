@@ -12,6 +12,7 @@ from app.services.hatif import format_provider_response, send_whatsapp_template,
 from app.services.rekaz import (
     build_template_parameters,
     build_text_message,
+    extract_fields,
     map_event_to_template,
     normalize_phone,
 )
@@ -50,7 +51,6 @@ def _enforce_rekaz_auth(authorization: str | None, tenant: str | None) -> None:
     logger.debug("rekaz_guard_checked")
 
 
-
 async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
     db: Session = SessionLocal()
     try:
@@ -61,19 +61,18 @@ async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
 
         external_event_id = payload.get("Id") or payload.get("id")
         event_name = payload.get("EventName") or payload.get("eventName")
+
+        # ── Extract all fields using the centralized helper ──
+        fields = extract_fields(payload)
+
         data = payload.get("Data") or payload.get("data") or {}
         customer = data.get("customer") or data.get("Customer") or {}
-
         phone_raw = (
             customer.get("MobileNumber")
             or customer.get("mobileNumber")
             or customer.get("phone")
         )
         phone = normalize_phone(phone_raw)
-        customer_name = customer.get("name") or customer.get("Name")
-        reservation_number = data.get("number") or data.get("Number")
-        product_name = data.get("productName") or data.get("ProductName")
-        start_date = data.get("startDate") or data.get("StartDate")
 
         logger.info(
             "rekaz_payload_extracted",
@@ -84,10 +83,7 @@ async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
                     "event_name": event_name,
                     "phone_raw": phone_raw,
                     "phone_normalized": phone,
-                    "customer_name": customer_name,
-                    "reservation_number": reservation_number,
-                    "product_name": product_name,
-                    "start_date": start_date,
+                    "fields": fields,
                 }
             },
         )
@@ -160,7 +156,11 @@ async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
         elif settings.HATIF_SEND_MODE == "text":
             # --- Text mode ---
             text_body = build_text_message(
-                event_name, customer_name, reservation_number, product_name, start_date
+                event_name,
+                fields.get("customer_name"),
+                fields.get("reservation_number"),
+                fields.get("product_name"),
+                fields.get("reservation_date"),
             )
             logger.info(
                 "rekaz_sending_text",
@@ -211,15 +211,9 @@ async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
             )
 
         else:
-            # --- Template mode ---
-            if template_name == "welcome":
-                parameters: list[str] = []
-                language = "ar"
-            else:
-                parameters = build_template_parameters(
-                    customer_name, reservation_number, product_name, start_date
-                )
-                language = "ar"
+            # --- Template mode (spec-driven) ---
+            parameters = build_template_parameters(template_name, fields)
+            language = "ar"
 
             logger.info(
                 "rekaz_sending_template",
@@ -230,6 +224,7 @@ async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
                         "template": template_name,
                         "language": language,
                         "param_count": len(parameters),
+                        "parameters": parameters,
                     }
                 },
             )
@@ -318,7 +313,6 @@ async def rekaz_webhook(
     request_id = request.state.request_id
 
     logger.info("rekaz_webhook_received", extra={"extra": {"request_id": request_id}})
-
 
     _enforce_rekaz_auth(authorization, tenant)
 
