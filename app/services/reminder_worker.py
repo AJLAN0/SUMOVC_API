@@ -5,10 +5,10 @@ from datetime import datetime
 
 from sqlalchemy import select
 
+from app.config import settings
 from app.database import SessionLocal
 from app.models import MessageLog, ScheduledMessage
 from app.services.hatif import format_provider_response, send_whatsapp_template
-from app.config import settings
 
 logger = logging.getLogger("app.reminder_worker")
 
@@ -74,6 +74,7 @@ async def _tick() -> None:
                             "template": job.template_name,
                             "attempt": job.attempts,
                             "reservation_number": job.reservation_number,
+                            "params": params,
                         }
                     },
                 )
@@ -82,7 +83,7 @@ async def _tick() -> None:
                     job.template_name,
                     job.to_phone,
                     params,
-                    language="ar",
+                    language=settings.HATIF_TEMPLATE_LANGUAGE,
                 )
 
                 if success:
@@ -104,6 +105,7 @@ async def _tick() -> None:
                                 "job_id": job.id,
                                 "to_phone": job.to_phone,
                                 "attempt": job.attempts,
+                                "max_attempts": MAX_ATTEMPTS,
                                 "error": job.last_error,
                             }
                         },

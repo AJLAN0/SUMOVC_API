@@ -57,22 +57,36 @@ async def send_whatsapp_template(
     parameters: list[str],
     language: str = "ar",
 ) -> tuple[bool, str, dict]:
+    """
+    Send a WhatsApp template via Hatif.
+
+    *parameters*: body param values (positional, matching template {{1}}..{{N}}).
+                  Empty values should be replaced with a placeholder BEFORE calling
+                  this function — Hatif rejects empty body param values with 500.
+    """
     token = await get_access_token()
     url = f"{settings.HATIF_BASE_URL.rstrip('/')}/v1/whatsapp/service-account/sendTemplate"
-    body = {
+
+    # ── Build payload ──
+    body: dict = {
         "ChannelId": settings.HATIF_CHANNEL_ID,
         "TemplateName": template_name,
         "Language": language,
         "ToNumber": to_number,
-        "Parameters": [
+    }
+
+    # Only include Parameters if there are body params (welcome has 0)
+    if parameters:
+        body["Parameters"] = [
             {
                 "Type": "Body",
-                "Values": [{"Type": "text", "Text": value} for value in parameters],
+                "Values": [{"Type": "text", "Text": v} for v in parameters],
             }
-        ],
-    }
+        ]
+
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
+    # ── Log outgoing payload (token masked) ──
     logger.info(
         "hatif_send_template_request",
         extra={
@@ -83,12 +97,9 @@ async def send_whatsapp_template(
                 "language": language,
                 "param_count": len(parameters),
                 "channel_id": settings.HATIF_CHANNEL_ID,
+                "outgoing_payload": body,
             }
         },
-    )
-    logger.debug(
-        "hatif_send_template_body",
-        extra={"extra": {"body": body}},
     )
 
     start = time.time()
@@ -117,15 +128,20 @@ async def send_whatsapp_template(
             },
         )
     else:
+        # ── Full diagnostic on failure ──
         logger.error(
             "hatif_send_template_failed",
             extra={
                 "extra": {
                     "to": to_number,
                     "template": template_name,
+                    "language": language,
                     "status_code": response.status_code,
                     "duration_ms": duration_ms,
-                    "response_body": content[:500],
+                    "response_body": content[:1000],
+                    "response_json": response_json,
+                    "params_sent": parameters,
+                    "outgoing_payload": body,
                 }
             },
         )
@@ -156,10 +172,6 @@ async def send_whatsapp_text(
                 "channel_id": settings.HATIF_CHANNEL_ID,
             }
         },
-    )
-    logger.debug(
-        "hatif_send_text_body",
-        extra={"extra": {"body": body}},
     )
 
     start = time.time()
@@ -194,7 +206,8 @@ async def send_whatsapp_text(
                     "to": to_number,
                     "status_code": response.status_code,
                     "duration_ms": duration_ms,
-                    "response_body": content[:500],
+                    "response_body": content[:1000],
+                    "response_json": response_json,
                 }
             },
         )

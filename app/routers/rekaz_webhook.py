@@ -1,6 +1,6 @@
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Header, Request
 from sqlalchemy import update
@@ -12,6 +12,7 @@ from app.database import SessionLocal
 from app.models import MessageLog, ScheduledMessage, WebhookEvent
 from app.services.hatif import format_provider_response, send_whatsapp_template, send_whatsapp_text
 from app.services.rekaz import (
+    TEMPLATE_PARAM_SPECS,
     _parse_dt,
     build_template_parameters,
     build_text_message,
@@ -22,6 +23,9 @@ from app.services.rekaz import (
 
 router = APIRouter()
 logger = logging.getLogger("app.rekaz_webhook")
+
+# Riyadh offset (UTC+3) — used when Rekaz sends naive (no-tz) datetimes
+_RIYADH = timezone(timedelta(hours=3))
 
 
 # ── Auth guard ──────────────────────────────────────────────────────────
@@ -65,16 +69,27 @@ async def _send_admin_notifications(
         return
 
     admin_template = "admin_reservation_confirmed"
-    admin_params = build_template_parameters(admin_template, fields)
+    language = settings.HATIF_TEMPLATE_LANGUAGE
+    admin_params = build_template_parameters(
+        admin_template, fields, placeholder=settings.EMPTY_PARAM_PLACEHOLDER,
+    )
 
     for admin_phone in admin_phones:
         try:
             logger.info(
                 "admin_send_started",
-                extra={"extra": {"request_id": request_id, "admin_phone": admin_phone, "template": admin_template}},
+                extra={
+                    "extra": {
+                        "request_id": request_id,
+                        "admin_phone": admin_phone,
+                        "template": admin_template,
+                        "param_count": len(admin_params),
+                    }
+                },
             )
             success, response_body, response_json = await send_whatsapp_template(
-                admin_template, admin_phone, admin_params, language="ar"
+                admin_template, admin_phone, admin_params,
+                language=language,
             )
             # Save MessageLog for admin
             admin_log = MessageLog(
@@ -126,17 +141,47 @@ def _schedule_reminder(
 
     start_dt = _parse_dt(start_iso)
     if not start_dt:
-        logger.warning("reminder_schedule_skipped_parse_failed", extra={"extra": {"request_id": request_id, "start_dt_iso": start_iso}})
+        logger.warning(
+            "reminder_schedule_skipped_parse_failed",
+            extra={"extra": {"request_id": request_id, "start_dt_iso": start_iso}},
+        )
         return
 
-    # Make start_dt naive UTC for comparison
-    start_dt_naive = start_dt.replace(tzinfo=None) if start_dt.tzinfo else start_dt
-    run_at = start_dt_naive - timedelta(minutes=settings.REMINDER_BEFORE_MINUTES)
+    # ── Timezone-aware UTC conversion ──
+    # If Rekaz sent a tz-aware datetime (Z / +00:00), convert to UTC.
+    # If naive (no tz info), assume Riyadh (Asia/Riyadh = UTC+3).
+    if start_dt.tzinfo is not None:
+        start_utc = start_dt.astimezone(timezone.utc).replace(tzinfo=None)
+    else:
+        # Treat as Riyadh local → convert to UTC by subtracting 3 hours
+        start_utc = (start_dt.replace(tzinfo=_RIYADH)
+                     .astimezone(timezone.utc)
+                     .replace(tzinfo=None))
+        logger.info(
+            "reminder_naive_dt_assumed_riyadh",
+            extra={
+                "extra": {
+                    "request_id": request_id,
+                    "raw_iso": start_iso,
+                    "assumed_riyadh": start_dt.isoformat(),
+                    "converted_utc": start_utc.isoformat(),
+                }
+            },
+        )
 
-    if run_at <= datetime.utcnow():
+    run_at = start_utc - timedelta(minutes=settings.REMINDER_BEFORE_MINUTES)
+    now_utc = datetime.utcnow()
+
+    if run_at <= now_utc:
         logger.info(
             "reminder_schedule_skipped_past",
-            extra={"extra": {"request_id": request_id, "run_at": run_at.isoformat(), "now": datetime.utcnow().isoformat()}},
+            extra={
+                "extra": {
+                    "request_id": request_id,
+                    "run_at": run_at.isoformat(),
+                    "now_utc": now_utc.isoformat(),
+                }
+            },
         )
         return
 
@@ -144,7 +189,10 @@ def _schedule_reminder(
     reminder_fields = dict(fields)
     reminder_fields["reservation_after_minutes"] = str(settings.REMINDER_BEFORE_MINUTES)
     reminder_fields["allowed_late_minutes"] = str(settings.ALLOWED_LATE_MINUTES)
-    reminder_params = build_template_parameters("reservation_reminder", reminder_fields)
+    reminder_params = build_template_parameters(
+        "reservation_reminder", reminder_fields,
+        placeholder=settings.EMPTY_PARAM_PLACEHOLDER,
+    )
 
     job = ScheduledMessage(
         external_event_id=external_event_id,
@@ -309,9 +357,11 @@ async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
 
         # --- Determine send mode ---
         template_name = map_event_to_template(event_name)
+        language = settings.HATIF_TEMPLATE_LANGUAGE
         status = "failed"
         provider_response = ""
         response_json: dict = {}
+        success = False
 
         if not phone:
             logger.warning(
@@ -385,55 +435,90 @@ async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
 
         else:
             # --- Template mode (spec-driven) ---
-            parameters = build_template_parameters(template_name, fields)
-            language = "ar"
-
-            logger.info(
-                "rekaz_sending_template",
-                extra={
-                    "extra": {
-                        "request_id": request_id,
-                        "phone": phone,
-                        "template": template_name,
-                        "language": language,
-                        "param_count": len(parameters),
-                        "parameters": parameters,
-                    }
-                },
+            parameters = build_template_parameters(
+                template_name, fields, placeholder=settings.EMPTY_PARAM_PLACEHOLDER,
             )
-            try:
-                success, response_body, response_json = await send_whatsapp_template(
-                    template_name, phone, parameters, language=language
+
+            # ── Param-count pre-flight check ──
+            expected = TEMPLATE_PARAM_SPECS.get(template_name)
+            if expected is not None and len(parameters) != len(expected):
+                logger.error(
+                    "rekaz_param_count_mismatch",
+                    extra={
+                        "extra": {
+                            "request_id": request_id,
+                            "template": template_name,
+                            "expected_count": len(expected),
+                            "actual_count": len(parameters),
+                            "spec_keys": expected,
+                            "param_values": parameters,
+                        }
+                    },
                 )
-                status = "success" if success else "failed"
-                provider_response = format_provider_response(success, response_body)
+                provider_response = format_provider_response(
+                    False, f"param_count_mismatch:expected={len(expected)},got={len(parameters)}"
+                )
+            else:
                 logger.info(
-                    "rekaz_template_send_result",
+                    "rekaz_sending_template",
                     extra={
                         "extra": {
                             "request_id": request_id,
                             "phone": phone,
                             "template": template_name,
-                            "success": success,
+                            "language": language,
+                            "param_count": len(parameters),
+                            "parameters": parameters,
                         }
                     },
                 )
-            except Exception as exc:
-                logger.error(
-                    "rekaz_template_send_exception",
-                    extra={"extra": {"request_id": request_id, "phone": phone, "error": str(exc)}},
-                    exc_info=True,
-                )
-                provider_response = format_provider_response(False, str(exc))
+                try:
+                    success, response_body, response_json = await send_whatsapp_template(
+                        template_name, phone, parameters,
+                        language=language,
+                    )
+                    status = "success" if success else "failed"
+                    provider_response = format_provider_response(success, response_body)
+                    logger.info(
+                        "rekaz_template_send_result",
+                        extra={
+                            "extra": {
+                                "request_id": request_id,
+                                "phone": phone,
+                                "template": template_name,
+                                "success": success,
+                            }
+                        },
+                    )
+                except Exception as exc:
+                    logger.error(
+                        "rekaz_template_send_exception",
+                        extra={"extra": {"request_id": request_id, "phone": phone, "error": str(exc)}},
+                        exc_info=True,
+                    )
+                    provider_response = format_provider_response(False, str(exc))
 
             # ── Post-send actions (template mode only) ──
+            # Only schedule reminder & notify admin when client send SUCCEEDED.
 
-            if template_name == "reservation_confirmed":
+            if template_name == "reservation_confirmed" and success:
                 # 1) Send admin notification
                 await _send_admin_notifications(fields, request_id, db)
                 # 2) Schedule reminder
                 if phone:
                     _schedule_reminder(fields, phone, external_event_id, request_id, db)
+
+            elif template_name == "reservation_confirmed" and not success:
+                logger.warning(
+                    "rekaz_skipping_post_actions_send_failed",
+                    extra={
+                        "extra": {
+                            "request_id": request_id,
+                            "template": template_name,
+                            "reason": "client send failed — no admin notification, no reminder scheduled",
+                        }
+                    },
+                )
 
             elif template_name == "reservation_cancelled":
                 # Cancel any pending reminders for this reservation

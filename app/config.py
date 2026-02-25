@@ -30,6 +30,10 @@ class Settings:
     HATIF_CHANNEL_ID: str = _must("HATIF_CHANNEL_ID")
     HATIF_WEBHOOK_SECRET: str = os.getenv("HATIF_WEBHOOK_SECRET", "")
 
+    # Template sending
+    HATIF_TEMPLATE_LANGUAGE: str = os.getenv("HATIF_TEMPLATE_LANGUAGE", "ar")
+    EMPTY_PARAM_PLACEHOLDER: str = os.getenv("EMPTY_PARAM_PLACEHOLDER", "-")
+
     # Admin / Reminder
     ADMIN_TO_NUMBERS: str = os.getenv("ADMIN_TO_NUMBERS", "")  # "9665xxxxxxx,9665yyyyyyy"
     REMINDER_BEFORE_MINUTES: int = int(os.getenv("REMINDER_BEFORE_MINUTES") or "20")
@@ -46,11 +50,14 @@ class Settings:
             )
 
     def admin_numbers(self) -> list[str]:
-        """Return parsed list of admin phone numbers (comma-separated env var)."""
+        """Return parsed + phone-normalized list of admin numbers."""
+        from app.services.rekaz import normalize_phone
+
         raw = self.ADMIN_TO_NUMBERS.strip()
         if not raw:
             return []
-        return [x.strip() for x in raw.split(",") if x.strip()]
+        numbers = [x.strip() for x in raw.split(",") if x.strip()]
+        return [n for n in (normalize_phone(x) for x in numbers) if n]
 
     def log_summary(self) -> None:
         """Log a safe summary of loaded settings (secrets masked)."""
@@ -67,6 +74,8 @@ class Settings:
                     "HATIF_CHANNEL_ID": self.HATIF_CHANNEL_ID,
                     "HATIF_WEBHOOK_SECRET": "set" if self.HATIF_WEBHOOK_SECRET else "empty",
                     "HATIF_SEND_MODE": self.HATIF_SEND_MODE,
+                    "HATIF_TEMPLATE_LANGUAGE": self.HATIF_TEMPLATE_LANGUAGE,
+                    "EMPTY_PARAM_PLACEHOLDER": self.EMPTY_PARAM_PLACEHOLDER,
                     "DATABASE_URL": self.DATABASE_URL,
                     "ADMIN_TO_NUMBERS": self.ADMIN_TO_NUMBERS or "(none)",
                     "REMINDER_BEFORE_MINUTES": self.REMINDER_BEFORE_MINUTES,

@@ -21,9 +21,14 @@ EVENT_TEMPLATE_MAP = {
     "AdminReservationConfirmedEvent": "admin_reservation_confirmed",
 }
 
-# ── Template → ordered parameter names ─────────────────────────────────
+# ── Template → ordered BODY parameter names ────────────────────────────
+#
+#  ⚠️  These MUST match the exact variable count & order in Hatif UI.
+#       Sending the wrong number of body params → 500 from Hatif.
+#       Empty body params ("") also cause 500 — use EMPTY_PARAM_PLACEHOLDER.
+#
 TEMPLATE_PARAM_SPECS: dict[str, list[str]] = {
-    # client – confirmed / done / updated / completed
+    # client – confirmed / done / updated / completed  (6 body vars)
     "reservation_confirmed": [
         "customer_name",      # {{1}}
         "product_name",       # {{2}}
@@ -33,32 +38,28 @@ TEMPLATE_PARAM_SPECS: dict[str, list[str]] = {
         "invoice_link",       # {{6}}
     ],
 
-    # client – reminder
+    # client – reminder  (3 body vars)
     "reservation_reminder": [
         "customer_name",
         "reservation_after_minutes",
         "allowed_late_minutes",
     ],
 
-    # client – cancelled
+    # client – cancelled  (2 body vars)
     "reservation_cancelled": [
         "customer_name",
         "reservation_number",
-        "cancel_reason",
     ],
 
-    # admin
+    # admin  (4 body vars — matches Hatif UI)
     "admin_reservation_confirmed": [
         "customer_name",
         "product_name",
         "reservation_date",
         "start_time",
-        "end_time",
-        "branch_name",
-        "reservation_number",
     ],
 
-    # welcome (no body params)
+    # welcome (0 body vars)
     "welcome": [],
 }
 
@@ -195,13 +196,18 @@ def extract_fields(payload: dict) -> dict[str, str]:
 
 # ── Spec-driven parameter builder ──────────────────────────────────────
 
-def build_template_parameters(template_name: str, fields: dict[str, str]) -> list[str]:
+def build_template_parameters(
+    template_name: str,
+    fields: dict[str, str],
+    placeholder: str = "-",
+) -> list[str]:
     """
-    Look up the ordered param spec for *template_name* and return a list of
-    values in the correct order (empty string for any missing field).
+    Look up the ordered BODY param spec for *template_name* and return a list
+    of values in the correct order.
 
-    If the template is not found in TEMPLATE_PARAM_SPECS a fallback spec is
-    used and a warning is logged so the issue is visible.
+    Empty strings are replaced with *placeholder* (configurable via
+    ``EMPTY_PARAM_PLACEHOLDER``) so Hatif never receives blank body params
+    (empty body params cause HTTP 500 from Hatif).
     """
     spec = TEMPLATE_PARAM_SPECS.get(template_name)
     if spec is None:
@@ -211,7 +217,7 @@ def build_template_parameters(template_name: str, fields: dict[str, str]) -> lis
         )
         spec = _FALLBACK_SPEC
 
-    params = [fields.get(key, "") for key in spec]
+    params = [fields.get(key, "") or placeholder for key in spec]
     logger.info(
         "template_parameters_built",
         extra={
