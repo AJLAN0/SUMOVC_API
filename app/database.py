@@ -33,11 +33,11 @@ def _normalize_database_url(url: str) -> str:
 
     # If someone provided 'postgres://', normalize to 'postgresql://'
     if url.startswith("postgres://"):
-        url = "postgresql://" + url[len("postgres://") :]
+        url = "postgresql://" + url[len("postgres://"):]
 
     # Prefer psycopg driver explicitly for SQLAlchemy 2.x
     if url.startswith("postgresql://"):
-        url = "postgresql+psycopg://" + url[len("postgresql://") :]
+        url = "postgresql+psycopg://" + url[len("postgresql://"):]
 
     return url
 
@@ -106,6 +106,7 @@ def _ensure_sqlite_schema() -> None:
     - Adds missing columns for message_logs (when upgrading schema without migrations)
     - Ensures unique index for webhook_events.external_event_id
     - Creates useful indexes for queries
+    - Handles scheduled_messages table indexes
     """
     message_log_columns = {
         "conversation_event_id": "TEXT",
@@ -120,6 +121,7 @@ def _ensure_sqlite_schema() -> None:
     }
 
     with engine.begin() as conn:
+        # ── message_logs columns ──
         existing_columns = {
             row[1] for row in conn.execute(text("PRAGMA table_info(message_logs)")).fetchall()
         }
@@ -137,6 +139,7 @@ def _ensure_sqlite_schema() -> None:
                     extra={"extra": {"table": "message_logs", "column": column, "type": column_type}},
                 )
 
+        # ── webhook_events unique index ──
         try:
             conn.execute(
                 text(
@@ -148,6 +151,7 @@ def _ensure_sqlite_schema() -> None:
         except Exception as exc:
             logger.warning("sqlite_unique_index_create_failed", extra={"extra": {"error": str(exc)}})
 
+        # ── message_logs indexes ──
         conn.execute(
             text(
                 "CREATE INDEX IF NOT EXISTS "
@@ -156,5 +160,23 @@ def _ensure_sqlite_schema() -> None:
         )
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_message_logs_contact_id ON message_logs (contact_id)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_message_logs_channel_id ON message_logs (channel_id)"))
+
+        # ── scheduled_messages indexes ──
+        try:
+            conn.execute(
+                text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS "
+                    "uq_sched_res_tpl_to ON scheduled_messages (reservation_number, template_name, to_phone)"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS "
+                    "ix_sched_status_run_at ON scheduled_messages (status, run_at)"
+                )
+            )
+            logger.info("sqlite_scheduled_messages_indexes_ensured")
+        except Exception as exc:
+            logger.warning("sqlite_scheduled_messages_index_failed", extra={"extra": {"error": str(exc)}})
 
     logger.info("sqlite_schema_migration_completed")

@@ -46,3 +46,33 @@ class MessageLog(Base):
         Index("ix_message_logs_contact_id", "contact_id"),
         Index("ix_message_logs_channel_id", "channel_id"),
     )
+
+
+class ScheduledMessage(Base):
+    __tablename__ = "scheduled_messages"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+
+    # correlation
+    external_event_id: Mapped[str | None] = mapped_column(String(100), index=True)
+    reservation_number: Mapped[str | None] = mapped_column(String(64), index=True)
+
+    # message
+    to_phone: Mapped[str] = mapped_column(String(32), index=True)
+    template_name: Mapped[str] = mapped_column(String(100))
+    params_json: Mapped[str] = mapped_column(Text, default="[]")
+
+    # scheduling
+    run_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    status: Mapped[str] = mapped_column(String(20), default="pending")  # pending/sent/failed/canceled
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    last_error: Mapped[str | None] = mapped_column(String(512), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        # يمنع تكرار نفس التذكير لنفس الحجز/العميل
+        UniqueConstraint("reservation_number", "template_name", "to_phone", name="uq_sched_res_tpl_to"),
+        Index("ix_sched_status_run_at", "status", "run_at"),
+    )

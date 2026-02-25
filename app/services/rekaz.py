@@ -8,17 +8,17 @@ logger = logging.getLogger("app.rekaz")
 EVENT_TEMPLATE_MAP = {
     # Client-facing
     "ReservationCreatedEvent": "welcome",
-    "ReservationConfirmedEvent": "reservation_confirmed",
-    "ReservationCancelledEvent": "reservation_cancelled",
-    "ReservationReminderEvent": "reservation_reminder",
-    # "ReservationCompletedEvent": "reservation_confirmed",   # same template
-    # "ReservationDoneEvent": "reservation_confirmed",        # same template
-    # "ReservationUpdatedEvent": "reservation_confirmed",     # same template
 
-    # Admin-facing
-    # "AdminReservationCreatedEvent": "admin_reservation_confirmed",
+    # client template (same for confirmed/completed/done/updated)
+    "ReservationConfirmedEvent": "reservation_confirmed",
+    "ReservationCompletedEvent": "reservation_confirmed",
+    "ReservationDoneEvent": "reservation_confirmed",
+    "ReservationUpdatedEvent": "reservation_confirmed",
+
+    "ReservationCancelledEvent": "reservation_cancelled",
+
+    # admin template
     "AdminReservationConfirmedEvent": "admin_reservation_confirmed",
-    # "AdminReservationCancelledEvent": "reservation_cancelled",
 }
 
 # ── Template → ordered parameter names ─────────────────────────────────
@@ -105,9 +105,10 @@ def _parse_dt(value: str | None) -> datetime | None:
     if not value:
         return None
     try:
-        if value.endswith("Z"):
-            value = value.replace("Z", "+00:00")
-        return datetime.fromisoformat(value)
+        v = value
+        if v.endswith("Z"):
+            v = v.replace("Z", "+00:00")
+        return datetime.fromisoformat(v)
     except Exception:
         return None
 
@@ -120,6 +121,16 @@ def _fmt_date(dt: datetime | None) -> str:
 def _fmt_time(dt: datetime | None) -> str:
     """HH:MM (24-hour)"""
     return dt.strftime("%H:%M") if dt else ""
+
+
+def _fmt_iso(value: str | None) -> str:
+    """Return a cleaned ISO string (Z → +00:00) for internal scheduling use."""
+    if not value:
+        return ""
+    v = value
+    if v.endswith("Z"):
+        v = v.replace("Z", "+00:00")
+    return v
 
 
 # ── Case-insensitive key lookup ────────────────────────────────────────
@@ -139,12 +150,15 @@ def extract_fields(payload: dict) -> dict[str, str]:
     """
     Pull every field the templates might need out of a Rekaz webhook payload
     and return a flat ``{param_name: value}`` dict.
+
     Dates are parsed and formatted so templates receive clean YYYY-MM-DD / HH:MM.
+    Raw ISO datetime strings are also included as ``start_dt_iso`` / ``end_dt_iso``
+    for internal use (e.g. scheduling reminders).
     """
     data = payload.get("Data") or payload.get("data") or {}
     customer = data.get("customer") or data.get("Customer") or {}
 
-    # ── Parse raw datetime strings ──
+    # ── Raw datetime strings ──
     start_raw = _ci(data, "startDate", "StartDate", "reservationDate", "ReservationDate")
     end_raw = _ci(data, "endDate", "EndDate")
 
@@ -156,10 +170,14 @@ def extract_fields(payload: dict) -> dict[str, str]:
         "reservation_number":         str(_ci(data, "number", "Number", "reservationNumber", "ReservationNumber") or ""),
         "product_name":               _ci(data, "productName", "ProductName") or "",
 
-        # Formatted date / time
+        # Formatted date / time (for template params)
         "reservation_date":           _fmt_date(start_dt),
         "start_time":                 _fmt_time(start_dt),
         "end_time":                   _fmt_time(end_dt),
+
+        # Raw ISO strings (for internal scheduling)
+        "start_dt_iso":               _fmt_iso(start_raw),
+        "end_dt_iso":                 _fmt_iso(end_raw),
 
         # Invoice — many possible key names from Rekaz
         "invoice_link":               _ci(data, "invoiceUrl", "InvoiceUrl", "invoiceLink", "InvoiceLink", "invoice", "Invoice") or "",

@@ -1,15 +1,18 @@
 import json
 import logging
+from datetime import datetime, timedelta
 
-from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Header, Request
+from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import SessionLocal
-from app.models import MessageLog, WebhookEvent
+from app.models import MessageLog, ScheduledMessage, WebhookEvent
 from app.services.hatif import format_provider_response, send_whatsapp_template, send_whatsapp_text
 from app.services.rekaz import (
+    _parse_dt,
     build_template_parameters,
     build_text_message,
     extract_fields,
@@ -21,19 +24,16 @@ router = APIRouter()
 logger = logging.getLogger("app.rekaz_webhook")
 
 
-def _enforce_rekaz_auth(authorization: str | None, tenant: str | None) -> None:
-    # Rekaz ما يرسل Authorization
-    # نخلي __tenant اختياري/أو نتحقق منه حسب رغبتك
+# ── Auth guard ──────────────────────────────────────────────────────────
 
+def _enforce_rekaz_auth(authorization: str | None, tenant: str | None) -> None:
     if settings.REKAZ_TENANT_ID and tenant and tenant.strip() != settings.REKAZ_TENANT_ID:
         logger.warning(
             "rekaz_tenant_mismatch",
             extra={"extra": {"received_tenant": tenant, "expected_tenant": settings.REKAZ_TENANT_ID}},
         )
-        # تقدر تخليها return أو ترفض 401 حسب سياستك
         return
 
-    # Authorization اختياري: إذا جا وتبي تتحقق منه
     if authorization:
         expected_auth = f"Basic {settings.REKAZ_BASIC_AUTH}"
         if authorization.strip() != expected_auth:
@@ -50,6 +50,179 @@ def _enforce_rekaz_auth(authorization: str | None, tenant: str | None) -> None:
 
     logger.debug("rekaz_guard_checked")
 
+
+# ── Admin send helper ───────────────────────────────────────────────────
+
+async def _send_admin_notifications(
+    fields: dict[str, str],
+    request_id: str,
+    db: Session,
+) -> None:
+    """Send admin_reservation_confirmed to each configured admin phone."""
+    admin_phones = settings.admin_numbers()
+    if not admin_phones:
+        logger.debug("admin_send_skipped_no_admin_numbers", extra={"extra": {"request_id": request_id}})
+        return
+
+    admin_template = "admin_reservation_confirmed"
+    admin_params = build_template_parameters(admin_template, fields)
+
+    for admin_phone in admin_phones:
+        try:
+            logger.info(
+                "admin_send_started",
+                extra={"extra": {"request_id": request_id, "admin_phone": admin_phone, "template": admin_template}},
+            )
+            success, response_body, response_json = await send_whatsapp_template(
+                admin_template, admin_phone, admin_params, language="ar"
+            )
+            # Save MessageLog for admin
+            admin_log = MessageLog(
+                phone=admin_phone,
+                template_name=admin_template,
+                status="success" if success else "failed",
+                provider_response=format_provider_response(success, response_body),
+                conversation_event_id=response_json.get("conversationeventid"),
+                contact_id=response_json.get("contactid"),
+                channel_id=settings.HATIF_CHANNEL_ID or None,
+                last_status=response_json.get("status"),
+                error_reason=response_json.get("message"),
+            )
+            db.add(admin_log)
+            db.commit()
+
+            logger.info(
+                "admin_send_result",
+                extra={
+                    "extra": {
+                        "request_id": request_id,
+                        "admin_phone": admin_phone,
+                        "success": success,
+                        "message_log_id": admin_log.id,
+                    }
+                },
+            )
+        except Exception:
+            logger.exception(
+                "admin_send_failed",
+                extra={"extra": {"request_id": request_id, "admin_phone": admin_phone}},
+            )
+
+
+# ── Reminder scheduling helper ──────────────────────────────────────────
+
+def _schedule_reminder(
+    fields: dict[str, str],
+    phone: str,
+    external_event_id: str,
+    request_id: str,
+    db: Session,
+) -> None:
+    """Create a ScheduledMessage for reservation_reminder if start_dt is in the future."""
+    start_iso = fields.get("start_dt_iso", "")
+    if not start_iso:
+        logger.info("reminder_schedule_skipped_no_start_dt", extra={"extra": {"request_id": request_id}})
+        return
+
+    start_dt = _parse_dt(start_iso)
+    if not start_dt:
+        logger.warning("reminder_schedule_skipped_parse_failed", extra={"extra": {"request_id": request_id, "start_dt_iso": start_iso}})
+        return
+
+    # Make start_dt naive UTC for comparison
+    start_dt_naive = start_dt.replace(tzinfo=None) if start_dt.tzinfo else start_dt
+    run_at = start_dt_naive - timedelta(minutes=settings.REMINDER_BEFORE_MINUTES)
+
+    if run_at <= datetime.utcnow():
+        logger.info(
+            "reminder_schedule_skipped_past",
+            extra={"extra": {"request_id": request_id, "run_at": run_at.isoformat(), "now": datetime.utcnow().isoformat()}},
+        )
+        return
+
+    # Build reminder params with settings values
+    reminder_fields = dict(fields)
+    reminder_fields["reservation_after_minutes"] = str(settings.REMINDER_BEFORE_MINUTES)
+    reminder_fields["allowed_late_minutes"] = str(settings.ALLOWED_LATE_MINUTES)
+    reminder_params = build_template_parameters("reservation_reminder", reminder_fields)
+
+    job = ScheduledMessage(
+        external_event_id=external_event_id,
+        reservation_number=fields.get("reservation_number") or None,
+        to_phone=phone,
+        template_name="reservation_reminder",
+        params_json=json.dumps(reminder_params, ensure_ascii=False),
+        run_at=run_at,
+        status="pending",
+    )
+    db.add(job)
+    try:
+        db.commit()
+        logger.info(
+            "reminder_scheduled",
+            extra={
+                "extra": {
+                    "request_id": request_id,
+                    "job_id": job.id,
+                    "to_phone": phone,
+                    "run_at": run_at.isoformat(),
+                    "reservation_number": fields.get("reservation_number"),
+                    "before_minutes": settings.REMINDER_BEFORE_MINUTES,
+                }
+            },
+        )
+    except IntegrityError:
+        db.rollback()
+        logger.info(
+            "reminder_job_already_exists",
+            extra={"extra": {"request_id": request_id, "reservation_number": fields.get("reservation_number")}},
+        )
+
+
+# ── Cancel reminder helper ──────────────────────────────────────────────
+
+def _cancel_reminders(
+    fields: dict[str, str],
+    request_id: str,
+    db: Session,
+) -> None:
+    """Cancel any pending reminder jobs for the given reservation_number."""
+    res_num = fields.get("reservation_number")
+    if not res_num:
+        logger.debug("cancel_reminders_skipped_no_reservation_number", extra={"extra": {"request_id": request_id}})
+        return
+
+    result = db.execute(
+        update(ScheduledMessage)
+        .where(
+            ScheduledMessage.reservation_number == res_num,
+            ScheduledMessage.template_name == "reservation_reminder",
+            ScheduledMessage.status == "pending",
+        )
+        .values(status="canceled", updated_at=datetime.utcnow())
+    )
+    cancelled_count = result.rowcount
+    db.commit()
+
+    if cancelled_count:
+        logger.info(
+            "reminders_cancelled",
+            extra={
+                "extra": {
+                    "request_id": request_id,
+                    "reservation_number": res_num,
+                    "cancelled_count": cancelled_count,
+                }
+            },
+        )
+    else:
+        logger.debug(
+            "cancel_reminders_none_found",
+            extra={"extra": {"request_id": request_id, "reservation_number": res_num}},
+        )
+
+
+# ── Main background processor ──────────────────────────────────────────
 
 async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
     db: Session = SessionLocal()
@@ -253,7 +426,20 @@ async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
                 )
                 provider_response = format_provider_response(False, str(exc))
 
-        # --- Save MessageLog ---
+            # ── Post-send actions (template mode only) ──
+
+            if template_name == "reservation_confirmed":
+                # 1) Send admin notification
+                await _send_admin_notifications(fields, request_id, db)
+                # 2) Schedule reminder
+                if phone:
+                    _schedule_reminder(fields, phone, external_event_id, request_id, db)
+
+            elif template_name == "reservation_cancelled":
+                # Cancel any pending reminders for this reservation
+                _cancel_reminders(fields, request_id, db)
+
+        # --- Save MessageLog (client) ---
         conversation_event_id = response_json.get("conversationeventid")
         contact_id = response_json.get("contactid")
 
@@ -302,6 +488,8 @@ async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
         db.close()
         logger.debug("rekaz_bg_db_session_closed", extra={"extra": {"request_id": request_id}})
 
+
+# ── Route ───────────────────────────────────────────────────────────────
 
 @router.post("/webhooks/rekaz")
 async def rekaz_webhook(

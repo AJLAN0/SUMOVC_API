@@ -30,6 +30,11 @@ class Settings:
     HATIF_CHANNEL_ID: str = _must("HATIF_CHANNEL_ID")
     HATIF_WEBHOOK_SECRET: str = os.getenv("HATIF_WEBHOOK_SECRET", "")
 
+    # Admin / Reminder
+    ADMIN_TO_NUMBERS: str = os.getenv("ADMIN_TO_NUMBERS", "")  # "9665xxxxxxx,9665yyyyyyy"
+    REMINDER_BEFORE_MINUTES: int = int(os.getenv("REMINDER_BEFORE_MINUTES") or "20")
+    ALLOWED_LATE_MINUTES: int = int(os.getenv("ALLOWED_LATE_MINUTES") or "10")
+
     # App
     HATIF_SEND_MODE: str = os.getenv("HATIF_SEND_MODE", "template")
     DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./app.db")
@@ -39,6 +44,13 @@ class Settings:
             raise ValueError(
                 f"HATIF_SEND_MODE must be 'template' or 'text', got '{self.HATIF_SEND_MODE}'"
             )
+
+    def admin_numbers(self) -> list[str]:
+        """Return parsed list of admin phone numbers (comma-separated env var)."""
+        raw = self.ADMIN_TO_NUMBERS.strip()
+        if not raw:
+            return []
+        return [x.strip() for x in raw.split(",") if x.strip()]
 
     def log_summary(self) -> None:
         """Log a safe summary of loaded settings (secrets masked)."""
@@ -56,6 +68,9 @@ class Settings:
                     "HATIF_WEBHOOK_SECRET": "set" if self.HATIF_WEBHOOK_SECRET else "empty",
                     "HATIF_SEND_MODE": self.HATIF_SEND_MODE,
                     "DATABASE_URL": self.DATABASE_URL,
+                    "ADMIN_TO_NUMBERS": self.ADMIN_TO_NUMBERS or "(none)",
+                    "REMINDER_BEFORE_MINUTES": self.REMINDER_BEFORE_MINUTES,
+                    "ALLOWED_LATE_MINUTES": self.ALLOWED_LATE_MINUTES,
                 }
             },
         )

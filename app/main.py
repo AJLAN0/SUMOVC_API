@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import time
 import uuid
@@ -33,10 +34,25 @@ logger.info(
             "send_mode": settings.HATIF_SEND_MODE,
             "database": settings.DATABASE_URL,
             "hatif_base_url": settings.HATIF_BASE_URL,
+            "admin_numbers": settings.admin_numbers(),
+            "reminder_before_minutes": settings.REMINDER_BEFORE_MINUTES,
+            "allowed_late_minutes": settings.ALLOWED_LATE_MINUTES,
         }
     },
 )
 
+
+# ── Startup: launch reminder worker ────────────────────────────────────
+
+@app.on_event("startup")
+async def _startup():
+    from app.services.reminder_worker import reminder_worker_loop  # noqa: E402
+
+    asyncio.create_task(reminder_worker_loop())
+    logger.info("reminder_worker_task_created")
+
+
+# ── Middleware ──────────────────────────────────────────────────────────
 
 @app.middleware("http")
 async def request_id_middleware(request: Request, call_next):
@@ -93,6 +109,8 @@ async def request_id_middleware(request: Request, call_next):
         )
         return JSONResponse(status_code=500, content={"detail": "Internal Server Error"})
 
+
+# ── Health endpoint ─────────────────────────────────────────────────────
 
 @app.get("/health", response_model=HealthResponse)
 async def health():
