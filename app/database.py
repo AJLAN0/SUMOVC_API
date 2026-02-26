@@ -179,4 +179,23 @@ def _ensure_sqlite_schema() -> None:
         except Exception as exc:
             logger.warning("sqlite_scheduled_messages_index_failed", extra={"extra": {"error": str(exc)}})
 
+        # ── sent_notifications indexes ──
+        try:
+            conn.execute(
+                text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS "
+                    "uq_sent_notif_res_type_phone ON sent_notifications "
+                    "(reservation_number, notification_type, phone)"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS "
+                    "ix_sent_notif_res_num ON sent_notifications (reservation_number)"
+                )
+            )
+            logger.info("sqlite_sent_notifications_indexes_ensured")
+        except Exception as exc:
+            logger.warning("sqlite_sent_notifications_index_failed", extra={"extra": {"error": str(exc)}})
+
     logger.info("sqlite_schema_migration_completed")

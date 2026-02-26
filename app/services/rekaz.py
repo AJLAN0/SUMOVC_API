@@ -6,19 +6,9 @@ logger = logging.getLogger("app.rekaz")
 
 # ── Event → Template mapping ───────────────────────────────────────────
 EVENT_TEMPLATE_MAP = {
-    # Client-facing
     "ReservationCreatedEvent": "welcome",
-
-    # client template (same for confirmed/completed/done/updated)
     "ReservationConfirmedEvent": "reservation_confirmed",
-    "ReservationCompletedEvent": "reservation_confirmed",
-    "ReservationDoneEvent": "reservation_confirmed",
-    "ReservationUpdatedEvent": "reservation_confirmed",
-
     "ReservationCancelledEvent": "reservation_cancelled",
-
-    # admin template
-    "AdminReservationConfirmedEvent": "admin_reservation_confirmed",
 }
 
 # ── Template → ordered BODY parameter names ────────────────────────────

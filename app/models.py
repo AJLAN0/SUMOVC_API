@@ -48,6 +48,22 @@ class MessageLog(Base):
     )
 
 
+class SentNotification(Base):
+    """Idempotency lock: at most ONE notification per (reservation, type, phone)."""
+    __tablename__ = "sent_notifications"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    reservation_number: Mapped[str] = mapped_column(String(64))
+    notification_type: Mapped[str] = mapped_column(String(64))
+    phone: Mapped[str] = mapped_column(String(32))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("reservation_number", "notification_type", "phone", name="uq_sent_notif_res_type_phone"),
+        Index("ix_sent_notif_res_num", "reservation_number"),
+    )
+
+
 class ScheduledMessage(Base):
     __tablename__ = "scheduled_messages"
 

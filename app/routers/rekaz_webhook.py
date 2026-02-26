@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import SessionLocal
-from app.models import MessageLog, ScheduledMessage, WebhookEvent
+from app.models import MessageLog, ScheduledMessage, SentNotification, WebhookEvent
 from app.services.hatif import format_provider_response, send_whatsapp_template, send_whatsapp_text
 from app.services.rekaz import (
     TEMPLATE_PARAM_SPECS,
@@ -55,6 +55,63 @@ def _enforce_rekaz_auth(authorization: str | None, tenant: str | None) -> None:
     logger.debug("rekaz_guard_checked")
 
 
+# ── Idempotency guard ────────────────────────────────────────────────────
+
+def _claim_notification_slot(
+    reservation_number: str | None,
+    notification_type: str,
+    phone: str,
+    request_id: str,
+    db: Session,
+) -> bool:
+    """
+    Try to insert a SentNotification row.  Returns True if the slot was
+    claimed (first time), False if this notification was already sent
+    (IntegrityError on the unique constraint).
+    """
+    if not reservation_number:
+        logger.debug(
+            "idempotency_skipped_no_reservation_number",
+            extra={"extra": {"request_id": request_id, "notification_type": notification_type}},
+        )
+        return True
+
+    lock = SentNotification(
+        reservation_number=reservation_number,
+        notification_type=notification_type,
+        phone=phone,
+    )
+    db.add(lock)
+    try:
+        db.flush()
+        logger.info(
+            "idempotency_lock_inserted",
+            extra={
+                "extra": {
+                    "request_id": request_id,
+                    "reservation_number": reservation_number,
+                    "notification_type": notification_type,
+                    "phone": phone,
+                }
+            },
+        )
+        return True
+    except IntegrityError:
+        db.rollback()
+        logger.info(
+            "duplicate_suppressed",
+            extra={
+                "extra": {
+                    "request_id": request_id,
+                    "reservation_number": reservation_number,
+                    "notification_type": notification_type,
+                    "phone": phone,
+                }
+            },
+        )
+        return False
+
+
 # ── Admin send helper ───────────────────────────────────────────────────
 
 async def _send_admin_notifications(
@@ -62,12 +119,13 @@ async def _send_admin_notifications(
     request_id: str,
     db: Session,
 ) -> None:
-    """Send admin_reservation_confirmed to each configured admin phone."""
+    """Send admin_reservation_confirmed to each configured admin phone (at most once per reservation)."""
     admin_phones = settings.admin_numbers()
     if not admin_phones:
         logger.debug("admin_send_skipped_no_admin_numbers", extra={"extra": {"request_id": request_id}})
         return
 
+    reservation_number = fields.get("reservation_number")
     admin_template = "admin_reservation_confirmed"
     language = settings.HATIF_TEMPLATE_LANGUAGE
     admin_params = build_template_parameters(
@@ -75,6 +133,19 @@ async def _send_admin_notifications(
     )
 
     for admin_phone in admin_phones:
+        if not _claim_notification_slot(reservation_number, "admin_confirmed", admin_phone, request_id, db):
+            logger.info(
+                "admin_confirmed_already_sent",
+                extra={
+                    "extra": {
+                        "request_id": request_id,
+                        "admin_phone": admin_phone,
+                        "reservation_number": reservation_number,
+                    }
+                },
+            )
+            continue
+
         try:
             logger.info(
                 "admin_send_started",
@@ -91,7 +162,6 @@ async def _send_admin_notifications(
                 admin_template, admin_phone, admin_params,
                 language=language,
             )
-            # Save MessageLog for admin
             admin_log = MessageLog(
                 phone=admin_phone,
                 template_name=admin_template,
@@ -362,6 +432,8 @@ async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
         provider_response = ""
         response_json: dict = {}
         success = False
+        is_duplicate = False
+        reservation_number = fields.get("reservation_number")
 
         if not phone:
             logger.warning(
@@ -377,7 +449,6 @@ async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
             provider_response = format_provider_response(False, "missing_phone")
 
         elif settings.HATIF_SEND_MODE == "text":
-            # --- Text mode ---
             text_body = build_text_message(
                 event_name,
                 fields.get("customer_name"),
@@ -435,93 +506,109 @@ async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
 
         else:
             # --- Template mode (spec-driven) ---
-            parameters = build_template_parameters(
-                template_name, fields, placeholder=settings.EMPTY_PARAM_PLACEHOLDER,
-            )
 
-            # ── Param-count pre-flight check ──
-            expected = TEMPLATE_PARAM_SPECS.get(template_name)
-            if expected is not None and len(parameters) != len(expected):
-                logger.error(
-                    "rekaz_param_count_mismatch",
-                    extra={
-                        "extra": {
-                            "request_id": request_id,
-                            "template": template_name,
-                            "expected_count": len(expected),
-                            "actual_count": len(parameters),
-                            "spec_keys": expected,
-                            "param_values": parameters,
-                        }
-                    },
-                )
-                provider_response = format_provider_response(
-                    False, f"param_count_mismatch:expected={len(expected)},got={len(parameters)}"
-                )
-            else:
-                logger.info(
-                    "rekaz_sending_template",
-                    extra={
-                        "extra": {
-                            "request_id": request_id,
-                            "phone": phone,
-                            "template": template_name,
-                            "language": language,
-                            "param_count": len(parameters),
-                            "parameters": parameters,
-                        }
-                    },
-                )
-                try:
-                    success, response_body, response_json = await send_whatsapp_template(
-                        template_name, phone, parameters,
-                        language=language,
-                    )
-                    status = "success" if success else "failed"
-                    provider_response = format_provider_response(success, response_body)
+            # ── Idempotency: one customer message per reservation ──
+            if template_name == "reservation_confirmed" and phone:
+                if not _claim_notification_slot(reservation_number, "customer_confirmed", phone, request_id, db):
+                    is_duplicate = True
                     logger.info(
-                        "rekaz_template_send_result",
+                        "customer_confirmed_already_sent",
+                        extra={
+                            "extra": {
+                                "request_id": request_id,
+                                "reservation_number": reservation_number,
+                                "phone": phone,
+                                "event_name": event_name,
+                            }
+                        },
+                    )
+                    provider_response = format_provider_response(False, "duplicate_suppressed")
+                    status = "duplicate"
+
+            if not is_duplicate:
+                parameters = build_template_parameters(
+                    template_name, fields, placeholder=settings.EMPTY_PARAM_PLACEHOLDER,
+                )
+
+                # ── Param-count pre-flight check ──
+                expected = TEMPLATE_PARAM_SPECS.get(template_name)
+                if expected is not None and len(parameters) != len(expected):
+                    logger.error(
+                        "rekaz_param_count_mismatch",
+                        extra={
+                            "extra": {
+                                "request_id": request_id,
+                                "template": template_name,
+                                "expected_count": len(expected),
+                                "actual_count": len(parameters),
+                                "spec_keys": expected,
+                                "param_values": parameters,
+                            }
+                        },
+                    )
+                    provider_response = format_provider_response(
+                        False, f"param_count_mismatch:expected={len(expected)},got={len(parameters)}"
+                    )
+                else:
+                    logger.info(
+                        "rekaz_sending_template",
                         extra={
                             "extra": {
                                 "request_id": request_id,
                                 "phone": phone,
                                 "template": template_name,
-                                "success": success,
+                                "language": language,
+                                "param_count": len(parameters),
+                                "parameters": parameters,
                             }
                         },
                     )
-                except Exception as exc:
-                    logger.error(
-                        "rekaz_template_send_exception",
-                        extra={"extra": {"request_id": request_id, "phone": phone, "error": str(exc)}},
-                        exc_info=True,
-                    )
-                    provider_response = format_provider_response(False, str(exc))
+                    try:
+                        success, response_body, response_json = await send_whatsapp_template(
+                            template_name, phone, parameters,
+                            language=language,
+                        )
+                        status = "success" if success else "failed"
+                        provider_response = format_provider_response(success, response_body)
+                        logger.info(
+                            "rekaz_template_send_result",
+                            extra={
+                                "extra": {
+                                    "request_id": request_id,
+                                    "phone": phone,
+                                    "template": template_name,
+                                    "success": success,
+                                }
+                            },
+                        )
+                    except Exception as exc:
+                        logger.error(
+                            "rekaz_template_send_exception",
+                            extra={"extra": {"request_id": request_id, "phone": phone, "error": str(exc)}},
+                            exc_info=True,
+                        )
+                        provider_response = format_provider_response(False, str(exc))
 
             # ── Post-send actions (template mode only) ──
-            # Only schedule reminder & notify admin when client send SUCCEEDED.
 
-            if template_name == "reservation_confirmed" and success:
-                # 1) Send admin notification
+            if template_name == "reservation_confirmed" and success and not is_duplicate:
                 await _send_admin_notifications(fields, request_id, db)
-                # 2) Schedule reminder
                 if phone:
                     _schedule_reminder(fields, phone, external_event_id, request_id, db)
 
-            elif template_name == "reservation_confirmed" and not success:
+            elif template_name == "reservation_confirmed" and not success and not is_duplicate:
                 logger.warning(
                     "rekaz_skipping_post_actions_send_failed",
                     extra={
                         "extra": {
                             "request_id": request_id,
                             "template": template_name,
-                            "reason": "client send failed — no admin notification, no reminder scheduled",
+                            "reason": "client send failed",
                         }
                     },
                 )
 
             elif template_name == "reservation_cancelled":
-                # Cancel any pending reminders for this reservation
                 _cancel_reminders(fields, request_id, db)
 
         # --- Save MessageLog (client) ---
@@ -553,6 +640,7 @@ async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
                     "phone": phone,
                     "send_status": status,
                     "send_mode": settings.HATIF_SEND_MODE,
+                    "is_duplicate": is_duplicate,
                     "conversation_event_id": conversation_event_id,
                     "contact_id": contact_id,
                 }
