@@ -6,7 +6,6 @@ logger = logging.getLogger("app.rekaz")
 
 # ── Event → Template mapping ───────────────────────────────────────────
 EVENT_TEMPLATE_MAP = {
-    "ReservationCreatedEvent": "welcome",
     "ReservationConfirmedEvent": "reservation_confirmed",
     "ReservationCancelledEvent": "reservation_cancelled",
 }
@@ -47,8 +46,6 @@ TEMPLATE_PARAM_SPECS: dict[str, list[str]] = {
         "start_time",
     ],
 
-    # welcome (0 body vars)
-    "welcome": [],
 }
 
 # ── Default fallback spec (if template not in TEMPLATE_PARAM_SPECS) ────
