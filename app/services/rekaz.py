@@ -28,17 +28,15 @@ TEMPLATE_PARAM_SPECS: dict[str, list[str]] = {
         "invoice_link",       # {{6}}
     ],
 
-    # client – reminder  (3 body vars)
+    # client – reminder  (1 body var)
     "reservation_reminder": [
         "customer_name",
-        "reservation_after_minutes",
-        "allowed_late_minutes",
     ],
 
     # client – cancelled  (2 body vars)
     "reservation_cancelled": [
         "customer_name",
-        "reservation_number",
+        "cancel_reason",
     ],
 
     # admin  (4 body vars — matches Hatif UI)

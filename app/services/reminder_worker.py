@@ -8,7 +8,7 @@ from sqlalchemy import select
 from app.config import settings
 from app.database import SessionLocal
 from app.models import MessageLog, ScheduledMessage
-from app.services.hatif import format_provider_response, send_whatsapp_template
+from app.services.hatif import format_provider_response, send_whatsapp_template, send_whatsapp_text
 
 logger = logging.getLogger("app.reminder_worker")
 
