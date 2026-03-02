@@ -119,15 +119,15 @@ async def _send_admin_notifications(
     request_id: str,
     db: Session,
 ) -> None:
-    """Send admin_reservation_confirmed to each configured admin phone (at most once per reservation)."""
+    """Send admin_reservation_confirmedd to each configured admin phone (at most once per reservation)."""
     admin_phones = settings.admin_numbers()
     if not admin_phones:
         logger.debug("admin_send_skipped_no_admin_numbers", extra={"extra": {"request_id": request_id}})
         return
 
     reservation_number = fields.get("reservation_number")
-    admin_template = "admin_reservation_confirmed"
-    language = settings.HATIF_TEMPLATE_LANGUAGE
+    admin_template = "admin_reservation_confirmedd"
+    language = "en"
     admin_params = build_template_parameters(
         admin_template, fields, placeholder=settings.EMPTY_PARAM_PLACEHOLDER,
     )

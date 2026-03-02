@@ -39,7 +39,7 @@ TEMPLATE_PARAM_SPECS: dict[str, list[str]] = {
     ],
 
     # admin  (4 body vars — matches Hatif UI)
-    "admin_reservation_confirmed": [
+    "admin_reservation_confirmedd": [
         "customer_name",
         "product_name",
         "reservation_date",
