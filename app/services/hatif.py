@@ -56,6 +56,7 @@ async def send_whatsapp_template(
     to_number: str,
     parameters: list[str],
     language: str = "ar",
+    header_image_url: str | None = None,
 ) -> tuple[bool, str, dict]:
     """
     Send a WhatsApp template via Hatif.
@@ -63,6 +64,7 @@ async def send_whatsapp_template(
     *parameters*: body param values (positional, matching template {{1}}..{{N}}).
                   Empty values should be replaced with a placeholder BEFORE calling
                   this function — Hatif rejects empty body param values with 500.
+    *header_image_url*: optional image URL for templates with an IMAGE header.
     """
     token = await get_access_token()
     url = f"{settings.HATIF_BASE_URL.rstrip('/')}/v1/whatsapp/service-account/sendTemplate"
@@ -75,14 +77,22 @@ async def send_whatsapp_template(
         "ToNumber": to_number,
     }
 
-    # Only include Parameters if there are body params (welcome has 0)
+    params_list: list[dict] = []
+
+    if header_image_url:
+        params_list.append({
+            "Type": "Header",
+            "Values": [{"Type": "image", "Url": header_image_url}],
+        })
+
     if parameters:
-        body["Parameters"] = [
-            {
-                "Type": "Body",
-                "Values": [{"Type": "text", "Text": v} for v in parameters],
-            }
-        ]
+        params_list.append({
+            "Type": "Body",
+            "Values": [{"Type": "text", "Text": v} for v in parameters],
+        })
+
+    if params_list:
+        body["Parameters"] = params_list
 
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 

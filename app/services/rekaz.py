@@ -6,7 +6,7 @@ logger = logging.getLogger("app.rekaz")
 
 # ── Event → Template mapping ───────────────────────────────────────────
 EVENT_TEMPLATE_MAP = {
-    "ReservationConfirmedEvent": "reservation_confirmed",
+    "ReservationConfirmedEvent": "conf_clint",
     "ReservationCancelledEvent": "reservation_cancelled",
 }
 
@@ -17,14 +17,13 @@ EVENT_TEMPLATE_MAP = {
 #       Empty body params ("") also cause 500 — use EMPTY_PARAM_PLACEHOLDER.
 #
 TEMPLATE_PARAM_SPECS: dict[str, list[str]] = {
-    # client – confirmed / done / updated / completed  (6 body vars)
-    "reservation_confirmed": [
+    # client – confirmed  (5 body vars + 1 header image)
+    "conf_clint": [
         "customer_name",      # {{1}}
         "product_name",       # {{2}}
         "reservation_date",   # {{3}}
         "start_time",         # {{4}}
         "end_time",           # {{5}}
-        "invoice_link",       # {{6}}
     ],
 
     # client – reminder  (1 body var)
@@ -41,9 +40,9 @@ TEMPLATE_PARAM_SPECS: dict[str, list[str]] = {
     # admin  (4 body vars — matches Hatif UI)
     "admin_reservation_confirmedd": [
         "customer_name",
-        "product_name",
         "reservation_date",
         "start_time",
+        "product_name",
     ],
 
 }
@@ -167,6 +166,8 @@ def extract_fields(payload: dict) -> dict[str, str]:
 
         # Invoice — many possible key names from Rekaz
         "invoice_link":               _ci(data, "invoiceUrl", "InvoiceUrl", "invoiceLink", "InvoiceLink", "invoice", "Invoice") or "",
+
+        "header_image_url":           _ci(data, "imageUrl", "ImageUrl", "image", "Image", "productImage", "ProductImage") or "",
 
         "cancel_reason":              _ci(data, "cancelReason", "CancelReason", "cancellationReason", "CancellationReason") or "",
         "branch_name":                _ci(data, "branchName", "BranchName") or "",

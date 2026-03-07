@@ -508,7 +508,7 @@ async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
             # --- Template mode (spec-driven) ---
 
             # ── Idempotency: one customer message per reservation ──
-            if template_name == "reservation_confirmed" and phone:
+            if template_name == "conf_clint" and phone:
                 if not _claim_notification_slot(reservation_number, "customer_confirmed", phone, request_id, db):
                     is_duplicate = True
                     logger.info(
@@ -564,9 +564,13 @@ async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
                         },
                     )
                     try:
+                        header_image = None
+                        if template_name == "conf_clint":
+                            header_image = fields.get("header_image_url") or settings.CONF_CLINT_HEADER_IMAGE or None
                         success, response_body, response_json = await send_whatsapp_template(
                             template_name, phone, parameters,
                             language=language,
+                            header_image_url=header_image,
                         )
                         status = "success" if success else "failed"
                         provider_response = format_provider_response(success, response_body)
@@ -591,12 +595,12 @@ async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
 
             # ── Post-send actions (template mode only) ──
 
-            if template_name == "reservation_confirmed" and success and not is_duplicate:
+            if template_name == "conf_clint" and success and not is_duplicate:
                 await _send_admin_notifications(fields, request_id, db)
                 if phone:
                     _schedule_reminder(fields, phone, external_event_id, request_id, db)
 
-            elif template_name == "reservation_confirmed" and not success and not is_duplicate:
+            elif template_name == "conf_clint" and not success and not is_duplicate:
                 logger.warning(
                     "rekaz_skipping_post_actions_send_failed",
                     extra={
