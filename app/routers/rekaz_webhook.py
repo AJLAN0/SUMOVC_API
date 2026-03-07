@@ -566,7 +566,7 @@ async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
                     try:
                         header_image = None
                         if template_name == "conf_clint":
-                            header_image = fields.get("header_image_url") or settings.CONF_CLINT_HEADER_IMAGE or None
+                            header_image = settings.CONF_CLINT_HEADER_IMAGE or None
                         success, response_body, response_json = await send_whatsapp_template(
                             template_name, phone, parameters,
                             language=language,
