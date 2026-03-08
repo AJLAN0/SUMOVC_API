@@ -77,22 +77,16 @@ async def send_whatsapp_template(
         "ToNumber": to_number,
     }
 
-    params_list: list[dict] = []
-
     if header_image_url:
-        params_list.append({
-            "Type": "Header",
-            "Values": [{"Type": "image", "Url": header_image_url}],
-        })
+        body["MediaUrl"] = header_image_url
 
     if parameters:
-        params_list.append({
-            "Type": "Body",
-            "Values": [{"Type": "text", "Text": v} for v in parameters],
-        })
-
-    if params_list:
-        body["Parameters"] = params_list
+        body["Parameters"] = [
+            {
+                "Type": "Body",
+                "Values": [{"Type": "text", "Text": v} for v in parameters],
+            }
+        ]
 
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
