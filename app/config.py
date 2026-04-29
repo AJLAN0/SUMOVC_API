@@ -35,7 +35,7 @@ class Settings:
     EMPTY_PARAM_PLACEHOLDER: str = os.getenv("EMPTY_PARAM_PLACEHOLDER", "-")
 
     # Default header image for conf_clint template (used when Rekaz payload has no image)
-    CONF_CLINT_HEADER_IMAGE: str = os.getenv("CONF_CLINT_HEADER_IMAGE", "")
+    #CONF_CLINT_HEADER_IMAGE: str = os.getenv("CONF_CLINT_HEADER_IMAGE", "")
 
     # Admin / Reminder
     ADMIN_TO_NUMBERS: str = os.getenv("ADMIN_TO_NUMBERS", "")  # "9665xxxxxxx,9665yyyyyyy"

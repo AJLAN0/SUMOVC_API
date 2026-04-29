@@ -203,7 +203,7 @@ def _schedule_reminder(
     request_id: str,
     db: Session,
 ) -> None:
-    """Create a ScheduledMessage for reservation_reminder if start_dt is in the future."""
+    """Create a ScheduledMessage for reservation_reminderrrr if start_dt is in the future."""
     start_iso = fields.get("start_dt_iso", "")
     if not start_iso:
         logger.info("reminder_schedule_skipped_no_start_dt", extra={"extra": {"request_id": request_id}})
@@ -255,12 +255,8 @@ def _schedule_reminder(
         )
         return
 
-    # Build reminder params with settings values
-    reminder_fields = dict(fields)
-    reminder_fields["reservation_after_minutes"] = str(settings.REMINDER_BEFORE_MINUTES)
-    reminder_fields["allowed_late_minutes"] = str(settings.ALLOWED_LATE_MINUTES)
     reminder_params = build_template_parameters(
-        "reservation_reminder", reminder_fields,
+        "reservation_reminderrrr", fields,
         placeholder=settings.EMPTY_PARAM_PLACEHOLDER,
     )
 
@@ -268,7 +264,7 @@ def _schedule_reminder(
         external_event_id=external_event_id,
         reservation_number=fields.get("reservation_number") or None,
         to_phone=phone,
-        template_name="reservation_reminder",
+        template_name="reservation_reminderrrr",
         params_json=json.dumps(reminder_params, ensure_ascii=False),
         run_at=run_at,
         status="pending",
@@ -314,7 +310,7 @@ def _cancel_reminders(
         update(ScheduledMessage)
         .where(
             ScheduledMessage.reservation_number == res_num,
-            ScheduledMessage.template_name == "reservation_reminder",
+            ScheduledMessage.template_name == "reservation_reminderrrr",
             ScheduledMessage.status == "pending",
         )
         .values(status="canceled", updated_at=datetime.utcnow())
@@ -508,7 +504,7 @@ async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
             # --- Template mode (spec-driven) ---
 
             # ── Idempotency: one customer message per reservation ──
-            if template_name == "conf_clint" and phone:
+            if template_name == "reservation_confirmedddddddd" and phone:
                 if not _claim_notification_slot(reservation_number, "customer_confirmed", phone, request_id, db):
                     is_duplicate = True
                     logger.info(
@@ -564,13 +560,9 @@ async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
                         },
                     )
                     try:
-                        header_image = None
-                        if template_name == "conf_clint":
-                            header_image = settings.CONF_CLINT_HEADER_IMAGE or None
                         success, response_body, response_json = await send_whatsapp_template(
                             template_name, phone, parameters,
                             language=language,
-                            header_image_url=header_image,
                         )
                         status = "success" if success else "failed"
                         provider_response = format_provider_response(success, response_body)
@@ -595,12 +587,12 @@ async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
 
             # ── Post-send actions (template mode only) ──
 
-            if template_name == "conf_clint" and success and not is_duplicate:
+            if template_name == "reservation_confirmedddddddd" and success and not is_duplicate:
                 await _send_admin_notifications(fields, request_id, db)
                 if phone:
                     _schedule_reminder(fields, phone, external_event_id, request_id, db)
 
-            elif template_name == "conf_clint" and not success and not is_duplicate:
+            elif template_name == "reservation_confirmedddddddd" and not success and not is_duplicate:
                 logger.warning(
                     "rekaz_skipping_post_actions_send_failed",
                     extra={

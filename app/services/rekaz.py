@@ -6,7 +6,7 @@ logger = logging.getLogger("app.rekaz")
 
 # ── Event → Template mapping ───────────────────────────────────────────
 EVENT_TEMPLATE_MAP = {
-    "ReservationConfirmedEvent": "conf_clint",
+    "ReservationConfirmedEvent": "reservation_confirmedddddddd",
     "ReservationCancelledEvent": "reservation_cancelled",
 }
 
@@ -17,18 +17,20 @@ EVENT_TEMPLATE_MAP = {
 #       Empty body params ("") also cause 500 — use EMPTY_PARAM_PLACEHOLDER.
 #
 TEMPLATE_PARAM_SPECS: dict[str, list[str]] = {
-    # client – confirmed  (5 body vars + 1 header image)
-    "conf_clint": [
+    # client – confirmed  (6 body vars, TEXT title — no header image)
+    "reservation_confirmedddddddd": [
         "customer_name",      # {{1}}
         "product_name",       # {{2}}
         "reservation_date",   # {{3}}
         "start_time",         # {{4}}
         "end_time",           # {{5}}
+        "branch_name",        # {{6}}
     ],
 
-    # client – reminder  (1 body var)
-    "reservation_reminder": [
-        "customer_name",
+    # client – reminder  (2 body vars)
+    "reservation_reminderrrr": [
+        "customer_name",      # {{1}}
+        "branch_name",        # {{2}}
     ],
 
     # client – cancelled  (2 body vars)

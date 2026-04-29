@@ -47,8 +47,8 @@ def main():
             db.commit()
             print(f"Cleaned up {len(old_jobs)} old test job(s).")
 
-        template_name = "reservation_reminder"
-        params = ["Test User"]
+        template_name = "reservation_reminderrrr"
+        params = ["Test User", "Test Branch"]
 
         now = datetime.now(timezone.utc)
         run_at = now + timedelta(minutes=2)
