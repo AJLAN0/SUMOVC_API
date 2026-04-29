@@ -39,12 +39,13 @@ TEMPLATE_PARAM_SPECS: dict[str, list[str]] = {
         "cancel_reason",
     ],
 
-    # admin  (4 body vars — matches Hatif UI)
-    "admin_reservation_confirmedd": [
-        "customer_name",
-        "reservation_date",
-        "start_time",
-        "product_name",
+    # admin  (5 body vars — matches Hatif UI)
+    "admin_reservation_confirmedddd": [
+        "customer_name",      # {{1}} GUEST NAME
+        "reservation_date",   # {{2}} DATE
+        "start_time",         # {{3}} TIME
+        "product_name",       # {{4}} PACKAGE NAME
+        "branch_name",        # {{5}} LOCATION
     ],
 
 }
