@@ -220,7 +220,7 @@ def build_template_parameters(
     return params
 
 
-# ── Plain-text message builder (for HATIF_SEND_MODE=text) ──────────────
+# ── Plain-text message builder  (for HATIF_SEND_MODE=text) ──────────────
 
 def build_text_message(
     event_name: str,
