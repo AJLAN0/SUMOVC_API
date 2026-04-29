@@ -172,7 +172,11 @@ def extract_fields(payload: dict) -> dict[str, str]:
         "header_image_url":           _ci(data, "imageUrl", "ImageUrl", "image", "Image", "productImage", "ProductImage") or "",
 
         "cancel_reason":              _ci(data, "cancelReason", "CancelReason", "cancellationReason", "CancellationReason") or "",
-        "branch_name":                _ci(data, "branchName", "BranchName") or "",
+        # Rekaz actually sends BranchNameAr / BranchNameEn (not BranchName as their docs claim).
+        # Prefer Arabic since our customer-facing template is Arabic.
+        "branch_name":                _ci(data, "branchNameAr", "BranchNameAr",
+                                                "branchNameEn", "BranchNameEn",
+                                                "branchName",   "BranchName") or "",
 
         "reservation_after_minutes":  str(_ci(data, "reservationAfterMinutes", "ReservationAfterMinutes", "afterMinutes", "AfterMinutes") or ""),
         "allowed_late_minutes":       str(_ci(data, "allowedLateMinutes", "AllowedLateMinutes") or ""),
