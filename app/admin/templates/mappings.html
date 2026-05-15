@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Event Mappings — SUMO Admin{% endblock %}
+{% block content %}
+<h2 class="text-2xl font-semibold text-white mb-4">Rekaz event → Hatif template</h2>
+<div class="grid lg:grid-cols-2 gap-6">
+  <form method="post" action="/dashboard/mappings/create" class="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3 text-sm h-fit">
+    <h3 class="font-medium text-slate-300">Add mapping</h3>
+    <input name="event_name" required placeholder="ReservationCreatedEvent" class="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2" />
+    <select name="template_name" required class="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2">
+      {% for t in known_templates %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+    </select>
+    <input name="description" placeholder="Note (optional)" class="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2" />
+    <label class="flex items-center gap-2 text-slate-400"><input type="checkbox" name="enabled" checked class="rounded" /> Enabled</label>
+    <button type="submit" class="w-full py-2 rounded-lg bg-indigo-600">Add</button>
+  </form>
+  <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="text-slate-500 text-left bg-slate-950/50">
+        <tr><th class="px-4 py-2">Event</th><th class="px-4 py-2">Template</th><th class="px-4 py-2">On</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for m in items %}
+        <tr id="row-{{ m.id }}" class="border-t border-slate-800">
+          <td class="px-4 py-2 font-mono text-xs">{{ m.event_name }}</td>
+          <td class="px-4 py-2 text-xs">{{ m.template_name }}</td>
+          <td class="px-4 py-2">
+            <form method="post" action="/dashboard/mappings/{{ m.id }}/toggle">
+              <button type="submit" class="{% if m.enabled %}text-emerald-400{% else %}text-slate-500{% endif %} text-xs">{{ 'Yes' if m.enabled else 'No' }}</button>
+            </form>
+          </td>
+          <td class="px-4 py-2 text-right">
+            <button hx-delete="/admin/api/mappings/{{ m.id }}" hx-target="#row-{{ m.id }}" hx-swap="outerHTML" hx-confirm="Delete mapping?"
+              class="text-red-400 text-xs">Delete</button>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="px-4 py-8 text-center text-slate-500">No mappings — defaults from code may apply</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+<p class="text-slate-500 text-xs mt-4">Known templates: {{ known_templates | join(', ') }}</p>
+{% endblock %}

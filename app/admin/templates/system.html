@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}System — SUMO Admin{% endblock %}
+{% block content %}
+<h2 class="text-2xl font-semibold text-white mb-4">System</h2>
+<div class="grid lg:grid-cols-2 gap-6">
+  <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
+    <h3 class="text-sm font-medium text-slate-300 mb-3">Configuration (masked)</h3>
+    <dl class="text-sm space-y-2">
+      {% for key, val in settings.items() %}
+      <div class="flex justify-between gap-4 border-b border-slate-800 pb-2">
+        <dt class="text-slate-500 font-mono text-xs">{{ key }}</dt>
+        <dd class="text-slate-200 text-right break-all">{{ val }}</dd>
+      </div>
+      {% endfor %}
+    </dl>
+  </div>
+  <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-4">
+    <h3 class="text-sm font-medium text-slate-300">Probes</h3>
+    <p class="text-sm text-slate-400">Event mappings in DB: <strong class="text-white">{{ mapping_count }}</strong></p>
+    <p class="text-sm">DB: <span class="{% if db_probe.ok %}text-emerald-400{% else %}text-red-400{% endif %}">{{ db_probe.message }}</span></p>
+    <div class="flex gap-2">
+      <button hx-get="/admin/api/health/db" hx-target="#probe-out" class="px-3 py-1.5 text-xs rounded-lg bg-slate-800">Re-test DB</button>
+      <button hx-get="/admin/api/health/hatif" hx-target="#probe-out" class="px-3 py-1.5 text-xs rounded-lg bg-slate-800">Test Hatif token</button>
+    </div>
+    <pre id="probe-out" class="text-xs text-slate-400 bg-slate-950 p-3 rounded-lg"></pre>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  document.body.addEventListener('htmx:afterOnLoad', function(evt) {
+    if (evt.detail.target.id === 'probe-out') {
+      try { evt.detail.target.textContent = JSON.stringify(JSON.parse(evt.detail.xhr.responseText), null, 2); } catch(e) {}
+    }
+  });
+</script>
+{% endblock %}

@@ -97,7 +97,23 @@ def init_db() -> None:
     if is_sqlite:
         _ensure_sqlite_schema()
 
+    _seed_event_mappings()
+
     logger.info("init_db_completed")
+
+
+def _seed_event_mappings() -> None:
+    from app.admin.services import seed_event_mappings
+
+    db = SessionLocal()
+    try:
+        seed_event_mappings(db)
+        logger.info("event_template_mappings_seeded")
+    except Exception as exc:
+        logger.warning("event_template_mappings_seed_failed", extra={"extra": {"error": str(exc)}})
+        db.rollback()
+    finally:
+        db.close()
 
 
 def _ensure_sqlite_schema() -> None:

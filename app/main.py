@@ -5,6 +5,8 @@ import uuid
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
+from starlette.middleware.sessions import SessionMiddleware
 
 from app.config import settings
 from app.logging_config import configure_logging
@@ -24,6 +26,23 @@ init_db()
 
 app = FastAPI(title="Rekaz-Hatif Middleware")
 
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.effective_session_secret(),
+    session_cookie="sumo_admin",
+    max_age=60 * 60 * 24 * 7,
+    same_site="lax",
+    https_only=settings.ADMIN_COOKIE_SECURE,
+)
+
+_static_dir = __import__("pathlib").Path(__file__).parent / "admin" / "static"
+app.mount("/admin/static", StaticFiles(directory=str(_static_dir)), name="admin-static")
+
+from app.admin.api import router as admin_api_router  # noqa: E402
+from app.admin.router import router as admin_pages_router  # noqa: E402
+
+app.include_router(admin_pages_router)
+app.include_router(admin_api_router)
 app.include_router(rekaz_webhook.router)
 app.include_router(hatif_webhook.router)
 

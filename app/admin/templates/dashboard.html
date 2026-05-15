@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}Overview — SUMO Admin{% endblock %}
+{% block content %}
+<h2 class="text-2xl font-semibold text-white mb-6">Overview</h2>
+<div class="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
+  <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
+    <p class="text-slate-500 text-xs uppercase">Webhooks today</p>
+    <p class="text-3xl font-bold text-white mt-1">{{ stats.webhooks_today }}</p>
+  </div>
+  <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
+    <p class="text-slate-500 text-xs uppercase">Sent today</p>
+    <p class="text-3xl font-bold text-emerald-400 mt-1">{{ stats.messages_sent_today }}</p>
+  </div>
+  <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
+    <p class="text-slate-500 text-xs uppercase">Failed today</p>
+    <p class="text-3xl font-bold text-red-400 mt-1">{{ stats.messages_failed_today }}</p>
+  </div>
+  <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
+    <p class="text-slate-500 text-xs uppercase">Pending reminders</p>
+    <p class="text-3xl font-bold text-amber-400 mt-1">{{ stats.pending_reminders }}</p>
+  </div>
+  <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
+    <p class="text-slate-500 text-xs uppercase">Failed reminders</p>
+    <p class="text-3xl font-bold text-orange-400 mt-1">{{ stats.failed_reminders }}</p>
+  </div>
+</div>
+<div class="grid lg:grid-cols-2 gap-6 mb-8">
+  <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
+    <h3 class="text-sm font-medium text-slate-300 mb-4">Webhooks (24h)</h3>
+    <canvas id="webhookChart" height="120"></canvas>
+  </div>
+  <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
+    <h3 class="text-sm font-medium text-slate-300 mb-2">Health</h3>
+    <p class="text-sm text-slate-400">Last scheduled update: <span class="text-slate-200">{{ stats.last_scheduled_update or '—' }}</span></p>
+    <p class="text-sm text-slate-400 mt-2"><a href="/health" target="_blank" class="text-indigo-400 hover:underline">Public /health</a></p>
+    <div class="mt-4 flex gap-2">
+      <button hx-get="/admin/api/health/db" hx-swap="innerHTML" hx-target="#probe-db"
+        class="px-3 py-1.5 text-xs rounded-lg bg-slate-800 hover:bg-slate-700">Test DB</button>
+      <button hx-get="/admin/api/health/hatif" hx-swap="innerHTML" hx-target="#probe-hatif"
+        class="px-3 py-1.5 text-xs rounded-lg bg-slate-800 hover:bg-slate-700">Test Hatif</button>
+    </div>
+    <pre id="probe-db" class="text-xs text-slate-400 mt-2"></pre>
+    <pre id="probe-hatif" class="text-xs text-slate-400 mt-1"></pre>
+  </div>
+</div>
+<div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+  <div class="px-4 py-3 border-b border-slate-800 flex justify-between items-center">
+    <h3 class="text-sm font-medium text-slate-300">Recent webhook events</h3>
+    <a href="/dashboard/events" class="text-xs text-indigo-400 hover:underline">View all</a>
+  </div>
+  <table class="w-full text-sm">
+    <thead class="text-slate-500 text-left bg-slate-950/50">
+      <tr><th class="px-4 py-2">Time</th><th class="px-4 py-2">Event</th><th class="px-4 py-2">Phone</th><th class="px-4 py-2">Reservation</th></tr>
+    </thead>
+    <tbody>
+      {% for ev in stats.recent_events %}
+      <tr class="border-t border-slate-800 hover:bg-slate-800/50">
+        <td class="px-4 py-2 text-slate-400">{{ ev.created_at[:19] if ev.created_at else '—' }}</td>
+        <td class="px-4 py-2"><a href="/dashboard/events/{{ ev.id }}" class="text-indigo-400 hover:underline">{{ ev.event_name }}</a></td>
+        <td class="px-4 py-2">{{ ev.phone or '—' }}</td>
+        <td class="px-4 py-2">{{ ev.reservation_number or '—' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" class="px-4 py-6 text-center text-slate-500">No events yet</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+  const labels = {{ stats.chart_labels | tojson }};
+  const data = {{ stats.chart_counts | tojson }};
+  if (labels.length) {
+    new Chart(document.getElementById('webhookChart'), {
+      type: 'bar',
+      data: { labels, datasets: [{ label: 'Webhooks', data, backgroundColor: 'rgba(99,102,241,0.7)' }] },
+      options: { plugins: { legend: { display: false } }, scales: { x: { ticks: { color: '#94a3b8', maxRotation: 45 } }, y: { ticks: { color: '#94a3b8' }, beginAtZero: true } } }
+    });
+  }
+  document.body.addEventListener('htmx:afterOnLoad', function(evt) {
+    if (evt.detail.target.id === 'probe-db' || evt.detail.target.id === 'probe-hatif') {
+      try { evt.detail.target.textContent = JSON.stringify(JSON.parse(evt.detail.xhr.responseText), null, 2); } catch(e) {}
+    }
+  });
+</script>
+{% endblock %}

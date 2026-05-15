@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Scheduled — SUMO Admin{% endblock %}
+{% block content %}
+<h2 class="text-2xl font-semibold text-white mb-4">Scheduled reminders</h2>
+<div class="grid lg:grid-cols-2 gap-6 mb-8">
+  <form method="post" action="/dashboard/scheduled/create" class="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3 text-sm">
+    <h3 class="font-medium text-slate-300">Create reminder</h3>
+    <input name="to_phone" required placeholder="9665XXXXXXXX" class="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2" />
+    <select name="template_name" required class="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2">
+      {% for t in templates %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+    </select>
+    <input name="params_json" value='["-","-"]' placeholder='["param1","param2"]' class="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2 font-mono text-xs" />
+    <input name="run_at" type="datetime-local" required class="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2" />
+    <input name="reservation_number" placeholder="Reservation #" class="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2" />
+    <button type="submit" class="w-full py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500">Schedule</button>
+  </form>
+  <form method="get" class="text-sm space-y-2">
+    <label class="text-slate-500">Filter status</label>
+    <select name="status" onchange="this.form.submit()" class="w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2">
+      <option value="">All</option>
+      {% for s in ['pending','sent','failed','canceled'] %}
+      <option value="{{ s }}" {% if status == s %}selected{% endif %}>{{ s }}</option>
+      {% endfor %}
+    </select>
+  </form>
+</div>
+<div class="bg-slate-900 border border-slate-800 rounded-xl overflow-x-auto">
+  <table class="w-full text-sm">
+    <thead class="text-slate-500 text-left bg-slate-950/50">
+      <tr><th class="px-3 py-2">Run at</th><th class="px-3 py-2">Phone</th><th class="px-3 py-2">Template</th><th class="px-3 py-2">Status</th><th class="px-3 py-2">Attempts</th><th class="px-3 py-2">Actions</th></tr>
+    </thead>
+    <tbody>
+      {% for j in items %}
+      <tr id="row-{{ j.id }}" class="border-t border-slate-800">
+        <td class="px-3 py-2 text-slate-400">{{ j.run_at.strftime('%Y-%m-%d %H:%M') if j.run_at else '—' }}</td>
+        <td class="px-3 py-2">{{ j.to_phone }}</td>
+        <td class="px-3 py-2 text-xs">{{ j.template_name }}</td>
+        <td class="px-3 py-2">{{ j.status }}</td>
+        <td class="px-3 py-2">{{ j.attempts }}{% if j.last_error %}<span class="text-red-400 text-xs block">{{ j.last_error[:40] }}</span>{% endif %}</td>
+        <td class="px-3 py-2 space-x-1 whitespace-nowrap">
+          <button hx-post="/admin/api/scheduled/{{ j.id }}/retry" hx-swap="none" onclick="location.reload()"
+            class="text-xs text-amber-400">Retry</button>
+          <button hx-post="/admin/api/scheduled/{{ j.id }}/cancel" hx-swap="none" onclick="location.reload()"
+            class="text-xs text-slate-400">Cancel</button>
+          <button hx-delete="/admin/api/scheduled/{{ j.id }}" hx-target="#row-{{ j.id }}" hx-swap="outerHTML" hx-confirm="Delete?"
+            class="text-xs text-red-400">Delete</button>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="px-4 py-8 text-center text-slate-500">No scheduled jobs</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

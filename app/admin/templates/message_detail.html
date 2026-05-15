@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Message {{ msg.id[:8] }} — SUMO Admin{% endblock %}
+{% block content %}
+<a href="/dashboard/messages" class="text-sm text-indigo-400 hover:underline">← Back</a>
+<h2 class="text-2xl font-semibold text-white mt-2 mb-4">Message log</h2>
+<dl class="grid grid-cols-2 gap-3 text-sm max-w-3xl mb-6">
+  <div><dt class="text-slate-500">Phone</dt><dd>{{ msg.phone }}</dd></div>
+  <div><dt class="text-slate-500">Template</dt><dd>{{ msg.template_name }}</dd></div>
+  <div><dt class="text-slate-500">Status</dt><dd>{{ msg.status }}</dd></div>
+  <div><dt class="text-slate-500">Last status</dt><dd>{{ msg.last_status or '—' }}</dd></div>
+  <div><dt class="text-slate-500">Conversation event</dt><dd class="font-mono text-xs">{{ msg.conversation_event_id or '—' }}</dd></div>
+  <div><dt class="text-slate-500">Error</dt><dd class="text-red-400">{{ msg.error_reason or '—' }}</dd></div>
+</dl>
+<pre class="bg-slate-900 border border-slate-800 rounded-xl p-4 text-xs overflow-auto text-slate-300">{{ msg.provider_response or '(empty)' }}</pre>
+{% endblock %}

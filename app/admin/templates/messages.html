@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Message Logs — SUMO Admin{% endblock %}
+{% block content %}
+<h2 class="text-2xl font-semibold text-white mb-4">Message Logs</h2>
+<form method="get" class="flex flex-wrap gap-3 mb-4 text-sm">
+  <select name="status" class="rounded-lg bg-slate-900 border border-slate-700 px-3 py-2">
+    <option value="">All statuses</option>
+    <option value="success" {% if status == 'success' %}selected{% endif %}>success</option>
+    <option value="failed" {% if status == 'failed' %}selected{% endif %}>failed</option>
+  </select>
+  <input name="phone" value="{{ phone }}" placeholder="Phone" class="rounded-lg bg-slate-900 border border-slate-700 px-3 py-2" />
+  <button type="submit" class="px-4 py-2 rounded-lg bg-indigo-600">Filter</button>
+</form>
+<div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+  <table class="w-full text-sm">
+    <thead class="text-slate-500 text-left bg-slate-950/50">
+      <tr><th class="px-4 py-2">Time</th><th class="px-4 py-2">Phone</th><th class="px-4 py-2">Template</th><th class="px-4 py-2">Status</th><th class="px-4 py-2">Delivery</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for m in items %}
+      <tr id="row-{{ m.id }}" class="border-t border-slate-800">
+        <td class="px-4 py-2 text-slate-400">{{ m.created_at.strftime('%Y-%m-%d %H:%M') if m.created_at else '—' }}</td>
+        <td class="px-4 py-2">{{ m.phone or '—' }}</td>
+        <td class="px-4 py-2">{{ m.template_name or '—' }}</td>
+        <td class="px-4 py-2"><span class="{% if m.status == 'success' %}text-emerald-400{% else %}text-red-400{% endif %}">{{ m.status }}</span></td>
+        <td class="px-4 py-2 text-slate-400">{{ m.last_status or '—' }}</td>
+        <td class="px-4 py-2 text-right space-x-2">
+          <a href="/dashboard/messages/{{ m.id }}" class="text-indigo-400 text-xs">View</a>
+          <button hx-delete="/admin/api/messages/{{ m.id }}" hx-target="#row-{{ m.id }}" hx-swap="outerHTML" hx-confirm="Delete?"
+            class="text-red-400 text-xs">Delete</button>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="px-4 py-8 text-center text-slate-500">No messages</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

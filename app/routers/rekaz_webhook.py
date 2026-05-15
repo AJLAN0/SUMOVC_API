@@ -422,7 +422,7 @@ async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
             return
 
         # --- Determine send mode ---
-        template_name = map_event_to_template(event_name)
+        template_name = map_event_to_template(db, event_name)
         language = settings.HATIF_TEMPLATE_LANGUAGE
         status = "failed"
         provider_response = ""

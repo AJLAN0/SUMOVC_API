@@ -16,10 +16,37 @@ cp .env.example .env
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
+## Admin dashboard
+
+Protected UI at `/` (login → `/dashboard`). Monitor webhooks, message logs, scheduled reminders, idempotency locks, and edit Rekaz event→template mappings.
+
+### Admin environment variables
+
+Set on Railway (never commit passwords to git):
+
+| Variable | Description |
+|----------|-------------|
+| `ADMIN_EMAIL` | Login email |
+| `ADMIN_PASSWORD_HASH` | bcrypt hash (see below) |
+| `ADMIN_SESSION_SECRET` | Random secret for session cookies (32+ chars) |
+| `ADMIN_COOKIE_SECURE` | Set `true` on Railway (HTTPS) |
+
+Generate a password hash:
+
+```bash
+python scripts/hash_admin_password.py
+# paste output into ADMIN_PASSWORD_HASH
+```
+
+Local dev only (optional): `ADMIN_PASSWORD` plain text is hashed at startup if `ADMIN_PASSWORD_HASH` is unset.
+
+After deploy, open `https://YOUR-APP/` and sign in. On **Event Mappings**, enable `ReservationCreatedEvent` if Rekaz does not send `ReservationConfirmedEvent`.
+
 ## Endpoints
 
 | Method | Path | Description |
 |--------|------|-------------|
+| GET | `/` | Admin (redirect to login or dashboard) |
 | GET | `/health` | Health check |
 | POST | `/webhooks/rekaz` | Rekaz webhook receiver |
 | POST | `/webhooks/hatif/whatsapp` | Hatif WhatsApp status webhook |

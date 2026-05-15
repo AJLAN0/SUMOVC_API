@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Event {{ event.external_event_id }} — SUMO Admin{% endblock %}
+{% block content %}
+<a href="/dashboard/events" class="text-sm text-indigo-400 hover:underline">← Back to events</a>
+<h2 class="text-2xl font-semibold text-white mt-2 mb-4">{{ event.event_name }}</h2>
+<dl class="grid grid-cols-2 gap-4 text-sm mb-6 max-w-2xl">
+  <div><dt class="text-slate-500">External ID</dt><dd class="font-mono">{{ event.external_event_id }}</dd></div>
+  <div><dt class="text-slate-500">Phone</dt><dd>{{ event.phone or '—' }}</dd></div>
+  <div><dt class="text-slate-500">Received</dt><dd>{{ event.created_at.strftime('%Y-%m-%d %H:%M:%S') if event.created_at else '—' }} UTC</dd></div>
+</dl>
+<pre class="bg-slate-900 border border-slate-800 rounded-xl p-4 text-xs overflow-auto max-h-[70vh] text-slate-300">{{ payload_pretty }}</pre>
+<button hx-delete="/admin/api/events/{{ event.id }}" hx-confirm="Delete?" onclick="setTimeout(()=>location.href='/dashboard/events',500)"
+  class="mt-4 px-4 py-2 rounded-lg bg-red-900/50 text-red-300 hover:bg-red-900 text-sm">Delete event</button>
+{% endblock %}

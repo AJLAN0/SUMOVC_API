@@ -1,12 +1,27 @@
 import logging
 import os
-from dataclasses import dataclass
+import secrets
+from dataclasses import dataclass, field
 
 from dotenv import load_dotenv
 
 load_dotenv()
 
 logger = logging.getLogger("app.config")
+
+def _hash_password(plain: str) -> str:
+    import bcrypt
+
+    return bcrypt.hashpw(plain.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+
+def _verify_password(plain: str, hashed: str) -> bool:
+    import bcrypt
+
+    try:
+        return bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
+    except Exception:
+        return False
 
 
 def _must(name: str) -> str:
@@ -46,11 +61,50 @@ class Settings:
     HATIF_SEND_MODE: str = os.getenv("HATIF_SEND_MODE", "template")
     DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./app.db")
 
+    # Admin dashboard
+    ADMIN_EMAIL: str = os.getenv("ADMIN_EMAIL", "").strip().lower()
+    ADMIN_PASSWORD_HASH: str = os.getenv("ADMIN_PASSWORD_HASH", "").strip()
+    ADMIN_PASSWORD: str = os.getenv("ADMIN_PASSWORD", "").strip()
+    ADMIN_SESSION_SECRET: str = os.getenv("ADMIN_SESSION_SECRET", "").strip()
+    ADMIN_COOKIE_SECURE: bool = os.getenv("ADMIN_COOKIE_SECURE", "").lower() in ("1", "true", "yes")
+
+    _resolved_admin_password_hash: str = field(default="", repr=False)
+
     def __post_init__(self) -> None:
         if self.HATIF_SEND_MODE not in {"template", "text"}:
             raise ValueError(
                 f"HATIF_SEND_MODE must be 'template' or 'text', got '{self.HATIF_SEND_MODE}'"
             )
+        object.__setattr__(self, "_resolved_admin_password_hash", self._resolve_admin_password_hash())
+
+    def _resolve_admin_password_hash(self) -> str:
+        if self.ADMIN_PASSWORD_HASH:
+            return self.ADMIN_PASSWORD_HASH
+        if self.ADMIN_PASSWORD:
+            hashed = _hash_password(self.ADMIN_PASSWORD)
+            logger.warning(
+                "admin_password_hashed_from_plain_env",
+                extra={"extra": {"hint": "Set ADMIN_PASSWORD_HASH on Railway and remove ADMIN_PASSWORD"}},
+            )
+            return hashed
+        return ""
+
+    def admin_configured(self) -> bool:
+        return bool(
+            self.ADMIN_EMAIL
+            and self._resolved_admin_password_hash
+            and self.ADMIN_SESSION_SECRET
+        )
+
+    def verify_admin_password(self, plain: str) -> bool:
+        if not self._resolved_admin_password_hash:
+            return False
+        return _verify_password(plain, self._resolved_admin_password_hash)
+
+    def effective_session_secret(self) -> str:
+        if self.ADMIN_SESSION_SECRET:
+            return self.ADMIN_SESSION_SECRET
+        return secrets.token_hex(32)
 
     def admin_numbers(self) -> list[str]:
         """Return parsed + phone-normalized list of admin numbers."""
@@ -83,9 +137,46 @@ class Settings:
                     "ADMIN_TO_NUMBERS": self.ADMIN_TO_NUMBERS or "(none)",
                     "REMINDER_BEFORE_MINUTES": self.REMINDER_BEFORE_MINUTES,
                     "ALLOWED_LATE_MINUTES": self.ALLOWED_LATE_MINUTES,
+                    "ADMIN_EMAIL": self.ADMIN_EMAIL or "(not set)",
+                    "ADMIN_CONFIGURED": self.admin_configured(),
                 }
             },
         )
+
+    def admin_settings_masked(self) -> dict:
+        """Safe dict for admin system page."""
+        return {
+            "REKAZ_TENANT_ID": self.REKAZ_TENANT_ID,
+            "REKAZ_BASIC_AUTH": f"{self.REKAZ_BASIC_AUTH[:4]}****" if len(self.REKAZ_BASIC_AUTH) > 4 else "****",
+            "HATIF_BASE_URL": self.HATIF_BASE_URL,
+            "HATIF_CLIENT_ID": self.HATIF_CLIENT_ID,
+            "HATIF_CLIENT_SECRET": f"{self.HATIF_CLIENT_SECRET[:4]}****"
+            if len(self.HATIF_CLIENT_SECRET) > 4
+            else "****",
+            "HATIF_SCOPE": self.HATIF_SCOPE,
+            "HATIF_CHANNEL_ID": self.HATIF_CHANNEL_ID,
+            "HATIF_WEBHOOK_SECRET": "set" if self.HATIF_WEBHOOK_SECRET else "empty",
+            "HATIF_SEND_MODE": self.HATIF_SEND_MODE,
+            "HATIF_TEMPLATE_LANGUAGE": self.HATIF_TEMPLATE_LANGUAGE,
+            "EMPTY_PARAM_PLACEHOLDER": self.EMPTY_PARAM_PLACEHOLDER,
+            "DATABASE_URL": self._mask_db_url(self.DATABASE_URL),
+            "ADMIN_TO_NUMBERS": self.ADMIN_TO_NUMBERS or "(none)",
+            "REMINDER_BEFORE_MINUTES": self.REMINDER_BEFORE_MINUTES,
+            "ALLOWED_LATE_MINUTES": self.ALLOWED_LATE_MINUTES,
+            "ADMIN_EMAIL": self.ADMIN_EMAIL or "(not set)",
+        }
+
+    @staticmethod
+    def _mask_db_url(url: str) -> str:
+        try:
+            from urllib.parse import urlparse
+
+            parsed = urlparse(url)
+            if parsed.password:
+                return url.replace(parsed.password, "****")
+        except Exception:
+            pass
+        return url
 
 
 settings = Settings()

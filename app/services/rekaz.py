@@ -2,6 +2,8 @@ import logging
 import re
 from datetime import datetime
 
+from sqlalchemy.orm import Session
+
 logger = logging.getLogger("app.rekaz")
 
 # ── Event → Template mapping ───────────────────────────────────────────
@@ -55,11 +57,13 @@ _FALLBACK_SPEC = ["customer_name", "product_name", "reservation_date", "start_ti
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────
-def map_event_to_template(event_name: str | None) -> str | None:
+def map_event_to_template(db: Session, event_name: str | None) -> str | None:
     if not event_name:
         logger.debug("map_event_to_template called with empty event_name")
         return None
-    template = EVENT_TEMPLATE_MAP.get(event_name)
+    from app.admin.services import resolve_template_for_event
+
+    template = resolve_template_for_event(db, event_name)
     logger.info(
         "event_template_mapped",
         extra={"extra": {"event_name": event_name, "template": template, "mapped": template is not None}},

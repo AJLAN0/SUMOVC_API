@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Webhook Events — SUMO Admin{% endblock %}
+{% block content %}
+<h2 class="text-2xl font-semibold text-white mb-4">Webhook Events</h2>
+<form method="get" class="flex flex-wrap gap-3 mb-4 text-sm">
+  <input name="event_name" value="{{ event_name }}" placeholder="Event name" class="rounded-lg bg-slate-900 border border-slate-700 px-3 py-2" />
+  <input name="phone" value="{{ phone }}" placeholder="Phone" class="rounded-lg bg-slate-900 border border-slate-700 px-3 py-2" />
+  <input name="q" value="{{ q }}" placeholder="Search payload / id" class="rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 min-w-[200px]" />
+  <button type="submit" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500">Filter</button>
+</form>
+<p class="text-slate-500 text-sm mb-3">{{ total }} total</p>
+<div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+  <table class="w-full text-sm">
+    <thead class="text-slate-500 text-left bg-slate-950/50">
+      <tr><th class="px-4 py-2">Time</th><th class="px-4 py-2">Event</th><th class="px-4 py-2">External ID</th><th class="px-4 py-2">Phone</th><th class="px-4 py-2"></th></tr>
+    </thead>
+    <tbody id="events-body">
+      {% for ev in items %}
+      <tr id="row-{{ ev.id }}" class="border-t border-slate-800 hover:bg-slate-800/50">
+        <td class="px-4 py-2 text-slate-400">{{ ev.created_at.strftime('%Y-%m-%d %H:%M') if ev.created_at else '—' }}</td>
+        <td class="px-4 py-2"><a href="/dashboard/events/{{ ev.id }}" class="text-indigo-400 hover:underline">{{ ev.event_name }}</a></td>
+        <td class="px-4 py-2 font-mono text-xs">{{ ev.external_event_id or '—' }}</td>
+        <td class="px-4 py-2">{{ ev.phone or '—' }}</td>
+        <td class="px-4 py-2 text-right">
+          <button hx-delete="/admin/api/events/{{ ev.id }}" hx-target="#row-{{ ev.id }}" hx-swap="outerHTML" hx-confirm="Delete this event?"
+            class="text-red-400 hover:text-red-300 text-xs">Delete</button>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="px-4 py-8 text-center text-slate-500">No events</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% if total > page_size %}
+<div class="mt-4 flex gap-2 text-sm">
+  {% if page > 1 %}<a href="?page={{ page - 1 }}&event_name={{ event_name }}&phone={{ phone }}&q={{ q }}" class="text-indigo-400">← Prev</a>{% endif %}
+  <span class="text-slate-500">Page {{ page }}</span>
+  {% if page * page_size < total %}<a href="?page={{ page + 1 }}&event_name={{ event_name }}&phone={{ phone }}&q={{ q }}" class="text-indigo-400">Next →</a>{% endif %}
+</div>
+{% endif %}
+{% endblock %}
