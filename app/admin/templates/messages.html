@@ -30,6 +30,7 @@
           <th>القالب</th>
           <th>حالة الإرسال</th>
           <th>حالة التسليم</th>
+          <th>ملاحظة</th>
           <th>إجراء</th>
         </tr>
       </thead>
@@ -41,6 +42,13 @@
           <td class="ltr font-mono" style="font-size: 0.8rem;">{{ m.template_name or '—' }}</td>
           <td>{{ badge_status(m.status) }}</td>
           <td class="ltr">{{ m.last_status or '—' }}</td>
+          <td style="max-width: 220px; font-size: 0.8rem;">
+            {% if m.status == 'failed' and m.error_reason %}
+            {% set ex = m.error_reason | explain_error %}
+            <span style="color: var(--danger);">{{ ex.title }}</span>
+            <span style="color: var(--text-muted); display: block;">{{ ex.message }}</span>
+            {% else %}—{% endif %}
+          </td>
           <td style="white-space: nowrap;">
             <a href="/dashboard/messages/{{ m.id }}" class="btn-link">عرض</a>
             <button hx-delete="/admin/api/messages/{{ m.id }}" hx-target="#row-{{ m.id }}" hx-swap="outerHTML"
@@ -48,7 +56,7 @@
           </td>
         </tr>
         {% else %}
-        {{ empty_row(6) }}
+        {{ empty_row(7) }}
         {% endfor %}
       </tbody>
     </table>

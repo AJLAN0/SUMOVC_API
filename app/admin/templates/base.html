@@ -42,9 +42,72 @@
     </aside>
     {% endif %}
     <main class="main-content">
+      {% from "_macros.html" import flash_messages %}
+      {{ flash_messages(flashes or []) }}
+      <div id="toast-root" class="toast-root" aria-live="assertive"></div>
       {% block content %}{% endblock %}
     </main>
   </div>
+  {% if active %}
+  <script>
+    window.SUMO_ADMIN = { apiPrefix: '/admin/api' };
+
+    function showToast(level, message, hint, title) {
+      const root = document.getElementById('toast-root');
+      if (!root) return;
+      const el = document.createElement('div');
+      el.className = 'toast toast-' + (level || 'error');
+      el.innerHTML =
+        (title ? '<strong class="toast-title">' + title + '</strong>' : '') +
+        '<p class="toast-message">' + message + '</p>' +
+        (hint ? '<p class="toast-hint">' + hint + '</p>' : '');
+      root.appendChild(el);
+      requestAnimationFrame(() => el.classList.add('toast-visible'));
+      setTimeout(() => {
+        el.classList.remove('toast-visible');
+        setTimeout(() => el.remove(), 300);
+      }, 6000);
+    }
+
+    function parseAdminApiError(xhr) {
+      let title = 'خطأ';
+      let message = 'حدث خطأ غير متوقع. حاول مرة أخرى.';
+      let hint = null;
+      try {
+        const j = JSON.parse(xhr.responseText);
+        title = j.title || title;
+        message = j.message_ar || j.detail || message;
+        hint = j.hint || null;
+        if (typeof message === 'object') message = JSON.stringify(message);
+      } catch (e) {
+        if (xhr.status === 401) {
+          message = 'انتهت الجلسة — سجّل الدخول من جديد.';
+          hint = 'سيتم توجيهك لصفحة الدخول…';
+          setTimeout(() => { window.location.href = '/login'; }, 1500);
+        } else if (xhr.status === 0) {
+          message = 'تعذر الاتصال بالخادم.';
+          hint = 'تحقق من الإنترنت أو أن التطبيق يعمل.';
+        }
+      }
+      return { title, message, hint };
+    }
+
+    document.body.addEventListener('htmx:responseError', function(evt) {
+      const err = parseAdminApiError(evt.detail.xhr);
+      showToast('error', err.message, err.hint, err.title);
+    });
+
+    document.body.addEventListener('htmx:afterOnLoad', function(evt) {
+      const xhr = evt.detail.xhr;
+      const trigger = xhr.getResponseHeader('HX-Trigger');
+      if (!trigger) return;
+      try {
+        const data = JSON.parse(trigger);
+        if (data.adminToast) showToast(data.adminToast.level, data.adminToast.message, data.adminToast.hint, data.adminToast.title);
+      } catch (e) {}
+    });
+  </script>
+  {% endif %}
   {% block scripts %}{% endblock %}
 </body>
 </html>

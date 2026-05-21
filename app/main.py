@@ -3,8 +3,10 @@ import logging
 import time
 import uuid
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
+
+from app.admin.errors import format_api_error
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -25,6 +27,19 @@ from app.schemas import HealthResponse  # noqa: E402
 init_db()
 
 app = FastAPI(title="Rekaz-Hatif Middleware")
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    if request.url.path.startswith("/admin/api"):
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=format_api_error(exc.status_code, exc.detail),
+        )
+    detail = exc.detail
+    if isinstance(detail, dict):
+        return JSONResponse(status_code=exc.status_code, content=detail)
+    return JSONResponse(status_code=exc.status_code, content={"detail": detail})
 
 app.add_middleware(
     SessionMiddleware,

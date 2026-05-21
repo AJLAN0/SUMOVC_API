@@ -398,6 +398,202 @@ body {
   color: #fca5a5;
 }
 
+.alert-success {
+  background: rgba(52, 211, 153, 0.08);
+  border-color: rgba(52, 211, 153, 0.25);
+  color: #6ee7b7;
+}
+
+.alert-error {
+  background: rgba(248, 113, 113, 0.08);
+  border-color: rgba(248, 113, 113, 0.25);
+  color: #fca5a5;
+}
+
+.alert-title {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+}
+
+.alert-message { margin: 0; }
+.alert-hint {
+  margin: 0.5rem 0 0;
+  font-size: 0.82rem;
+  color: var(--text-dim);
+  opacity: 0.95;
+}
+
+.flash-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  margin-bottom: 1.25rem;
+}
+
+/* Toast (HTMX / API errors) */
+.toast-root {
+  position: fixed;
+  top: 1.25rem;
+  left: 1.25rem;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-width: min(420px, calc(100vw - 2rem));
+  pointer-events: none;
+}
+
+.toast {
+  pointer-events: auto;
+  background: var(--bg-card);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 1rem 1.15rem;
+  box-shadow: var(--shadow);
+  transform: translateY(-8px);
+  opacity: 0;
+  transition: transform 0.25s, opacity 0.25s;
+  border-right: 3px solid var(--danger);
+}
+
+.toast-visible {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+.toast-error { border-right-color: var(--danger); }
+.toast-success { border-right-color: var(--success); }
+.toast-warning { border-right-color: var(--warning); }
+
+.toast-title {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+  color: var(--text);
+}
+
+.toast-message { margin: 0; font-size: 0.9rem; color: var(--text-muted); }
+.toast-hint { margin: 0.4rem 0 0; font-size: 0.8rem; color: var(--text-dim); }
+
+/* Insight / alert cards on dashboard */
+.insight-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 1rem;
+}
+
+.insight-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 1rem 1.15rem;
+  border-right: 3px solid var(--info);
+}
+
+.insight-danger { border-right-color: var(--danger); }
+.insight-warning { border-right-color: var(--warning); }
+.insight-info { border-right-color: var(--info); }
+
+.insight-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.insight-card p {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--text-muted);
+}
+
+.stat-card-link {
+  text-decoration: none;
+  color: inherit;
+  display: block;
+}
+
+.stat-card-link:hover .stat-card {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-dim);
+}
+
+/* Health probes */
+.health-result {
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  margin-bottom: 0.5rem;
+}
+
+.health-ok {
+  background: rgba(52, 211, 153, 0.06);
+  border-color: rgba(52, 211, 153, 0.2);
+}
+
+.health-bad {
+  background: rgba(248, 113, 113, 0.06);
+  border-color: rgba(248, 113, 113, 0.2);
+}
+
+.health-result-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+
+.health-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--success);
+}
+
+.health-bad .health-dot { background: var(--danger); }
+
+.health-status {
+  margin-right: auto;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+
+.health-message { margin: 0; font-size: 0.9rem; }
+.health-hint { margin: 0.35rem 0 0; font-size: 0.82rem; color: var(--text-dim); }
+
+.probe-slot { margin-top: 0.75rem; }
+
+/* Inline error briefs in tables */
+.error-brief {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.error-brief-title {
+  font-weight: 600;
+  font-size: 0.78rem;
+  color: var(--danger);
+}
+
+.error-brief-msg {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.error-brief-hint {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+}
+
+.error-detail-box {
+  background: rgba(248, 113, 113, 0.06);
+  border: 1px solid rgba(248, 113, 113, 0.2);
+  border-radius: var(--radius-sm);
+  padding: 0.85rem 1rem;
+}
+
 /* Empty state */
 .empty-state {
   text-align: center;

@@ -148,7 +148,13 @@ def api_create_template(
 ):
     keys = _parse_param_keys(body.param_keys_text)
     if not keys:
-        raise HTTPException(400, "أضف متغيراً واحداً على الأقل")
+        raise HTTPException(
+            400,
+            detail={
+                "message_ar": "أضف متغيراً واحداً على الأقل (سطر لكل متغير).",
+                "hint": "مثال: customer_name ثم branch_name في أسطر منفصلة.",
+            },
+        )
     row = WhatsAppTemplate(
         name=body.name.strip(),
         title_ar=(body.title_ar or "").strip() or None,
@@ -162,7 +168,7 @@ def api_create_template(
         db.commit()
     except Exception as exc:
         db.rollback()
-        raise HTTPException(400, f"تعذر الحفظ: {exc}") from exc
+        raise HTTPException(400, detail=str(exc)) from exc
     invalidate_template_cache()
     db.refresh(row)
     return {"id": row.id}
@@ -182,7 +188,13 @@ def api_update_template(
     if "param_keys_text" in data:
         keys = _parse_param_keys(data.pop("param_keys_text") or "")
         if not keys:
-            raise HTTPException(400, "أضف متغيراً واحداً على الأقل")
+            raise HTTPException(
+            400,
+            detail={
+                "message_ar": "أضف متغيراً واحداً على الأقل (سطر لكل متغير).",
+                "hint": "مثال: customer_name ثم branch_name في أسطر منفصلة.",
+            },
+        )
         row.param_keys_json = param_keys_to_json(keys)
     for field, value in data.items():
         setattr(row, field, value)
@@ -582,7 +594,7 @@ def api_create_mapping(
         db.commit()
     except Exception as exc:
         db.rollback()
-        raise HTTPException(400, f"Could not create mapping: {exc}") from exc
+        raise HTTPException(400, detail=str(exc)) from exc
     invalidate_mapping_cache()
     db.refresh(row)
     return {"id": row.id}

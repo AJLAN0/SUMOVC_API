@@ -39,3 +39,38 @@
 {% macro empty_row(colspan, message='لا توجد بيانات') %}
 <tr><td colspan="{{ colspan }}"><div class="empty-state"><div class="icon">📭</div>{{ message }}</div></td></tr>
 {% endmacro %}
+
+{% macro flash_messages(flashes) %}
+{% if flashes %}
+<div class="flash-stack" role="status" aria-live="polite">
+  {% for f in flashes %}
+  <div class="alert alert-{{ f.level }}{% if f.title %} alert-has-title{% endif %}">
+    {% if f.title %}<strong class="alert-title">{{ f.title }}</strong>{% endif %}
+    <p class="alert-message">{{ f.message }}</p>
+    {% if f.hint %}<p class="alert-hint">{{ f.hint }}</p>{% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endmacro %}
+
+{% macro error_brief(raw, max_len=80) %}
+{% set ex = raw | explain_error %}
+<div class="error-brief">
+  <span class="error-brief-title">{{ ex.title }}</span>
+  <span class="error-brief-msg">{{ ex.message }}</span>
+  {% if ex.hint %}<span class="error-brief-hint">{{ ex.hint }}</span>{% endif %}
+</div>
+{% endmacro %}
+
+{% macro health_card(result) %}
+<div class="health-result {% if result.ok %}health-ok{% else %}health-bad{% endif %}">
+  <div class="health-result-head">
+    <span class="health-dot"></span>
+    <strong>{{ result.title or 'الفحص' }}</strong>
+    <span class="health-status">{% if result.ok %}يعمل{% else %}مشكلة{% endif %}</span>
+  </div>
+  <p class="health-message">{{ result.message }}</p>
+  {% if result.hint %}<p class="health-hint">{{ result.hint }}</p>{% endif %}
+</div>
+{% endmacro %}

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import page_header, badge_status, status_ar, empty_row %}
+{% from "_macros.html" import page_header, badge_status, status_ar, empty_row, error_brief %}
 {% block title %}التذكيرات — SUMO{% endblock %}
 {% block content %}
 {{ page_header('التذكيرات المجدولة', 'جدولة رسائل واتساب قبل موعد الحجز — اختر القالب واملأ الحقول بسهولة') }}
@@ -88,7 +88,17 @@
             <span class="ltr font-mono" dir="ltr" style="font-size: 0.75rem;">{{ j.template_name }}</span>
           </td>
           <td>{{ badge_status(j.status) }}</td>
-          <td>{{ j.attempts }}{% if j.last_error %}<span style="color: var(--danger); font-size: 0.75rem; display: block;">{{ j.last_error[:50] }}</span>{% endif %}</td>
+          <td>
+            {{ j.attempts }}
+            {% if j.last_error and j.status == 'failed' %}
+            <div class="error-brief" style="margin-top: 0.35rem;">
+              {% set ex = j.last_error | explain_error %}
+              <span class="error-brief-title">{{ ex.title }}</span>
+              <span class="error-brief-msg">{{ ex.message }}</span>
+              {% if ex.hint %}<span class="error-brief-hint">{{ ex.hint }}</span>{% endif %}
+            </div>
+            {% endif %}
+          </td>
           <td style="white-space: nowrap;">
             <button hx-post="/admin/api/scheduled/{{ j.id }}/retry" hx-swap="none" onclick="location.reload()" class="btn-link">إعادة</button>
             <button hx-post="/admin/api/scheduled/{{ j.id }}/cancel" hx-swap="none" onclick="location.reload()" class="btn-link" style="color: var(--text-muted);">إلغاء</button>

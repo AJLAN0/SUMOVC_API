@@ -1,47 +1,115 @@
 {% extends "base.html" %}
-{% from "_macros.html" import page_header, stat_card %}
+{% from "_macros.html" import page_header, stat_card, health_card %}
 {% block title %}نظرة عامة — SUMO{% endblock %}
 {% block content %}
-{{ page_header('نظرة عامة', 'ملخص سريع لنشاط اليوم وحالة النظام') }}
+{{ page_header('نظرة عامة', 'ملخص ذكي — تنبيهات واضحة عند وجود مشاكل') }}
+
+{% if stats.alerts %}
+<div class="insight-grid" style="margin-bottom: 1.5rem;">
+  {% for a in stats.alerts %}
+  <div class="insight-card insight-{{ a.level }}">
+    <div class="insight-head">
+      <span class="insight-icon">{% if a.level == 'danger' %}⚠{% elif a.level == 'warning' %}◷{% else %}ℹ{% endif %}</span>
+      <strong>{{ a.title }}</strong>
+    </div>
+    <p>{{ a.message }}</p>
+    {% if a.action_url %}
+    <a href="{{ a.action_url }}" class="btn btn-ghost btn-sm" style="margin-top: 0.75rem;">{{ a.action_label }}</a>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="alert alert-success" style="margin-bottom: 1.5rem;">
+  <strong class="alert-title">كل شيء يبدو طبيعياً</strong>
+  <p class="alert-message">لا توجد تنبيهات عاجلة اليوم. راقب الأحداث والتذكيرات من القائمة.</p>
+</div>
+{% endif %}
 
 <div class="stat-grid">
   {{ stat_card('أحداث ركاز اليوم', stats.webhooks_today) }}
   {{ stat_card('رسائل ناجحة اليوم', stats.messages_sent_today, '#34d399', '#34d399') }}
-  {{ stat_card('رسائل فاشلة اليوم', stats.messages_failed_today, '#f87171', '#f87171') }}
-  {{ stat_card('تذكيرات قيد الانتظار', stats.pending_reminders, '#fbbf24', '#fbbf24') }}
-  {{ stat_card('تذكيرات فاشلة', stats.failed_reminders, '#fb923c', '#fb923c') }}
+  <a href="/dashboard/messages?status=failed" class="stat-card-link">
+    {{ stat_card('رسائل فاشلة اليوم', stats.messages_failed_today, '#f87171', '#f87171') }}
+  </a>
+  <a href="/dashboard/scheduled?status=pending" class="stat-card-link">
+    {{ stat_card('تذكيرات قيد الانتظار', stats.pending_reminders, '#fbbf24', '#fbbf24') }}
+  </a>
+  <a href="/dashboard/scheduled?status=failed" class="stat-card-link">
+    {{ stat_card('تذكيرات فاشلة', stats.failed_reminders, '#fb923c', '#fb923c') }}
+  </a>
 </div>
 
 <div class="split-layout" style="margin-bottom: 2rem;">
   <div class="card">
-    <div class="card-header">
-      <h3>الأحداث خلال ٢٤ ساعة</h3>
-    </div>
+    <div class="card-header"><h3>الأحداث خلال ٢٤ ساعة</h3></div>
     <div class="card-body">
       <canvas id="webhookChart" height="140"></canvas>
     </div>
   </div>
   <div class="card">
-    <div class="card-header">
-      <h3>صحة النظام</h3>
-    </div>
+    <div class="card-header"><h3>صحة النظام</h3></div>
     <div class="card-body">
-      <p style="color: var(--text-muted); font-size: 0.9rem; margin: 0 0 0.75rem;">
+      {{ health_card(stats.db_health) }}
+      <p style="color: var(--text-muted); font-size: 0.85rem; margin: 1rem 0 0.5rem;">
         آخر تحديث للجدولة:
-        <span class="ltr" style="color: var(--text);">{{ stats.last_scheduled_update or '—' }}</span>
+        <span class="ltr">{{ stats.last_scheduled_update or '—' }}</span>
       </p>
-      <p style="margin-bottom: 1rem;">
-        <a href="/health" target="_blank" class="btn btn-ghost btn-sm">فحص /health العام ↗</a>
+      {% if stats.overdue_reminders > 0 %}
+      <p class="alert alert-warning" style="margin: 0.75rem 0; padding: 0.65rem 0.85rem; font-size: 0.85rem;">
+        {{ stats.overdue_reminders }} تذكير تجاوز وقت إرساله ولم يُرسل بعد.
       </p>
-      <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-        <button hx-get="/admin/api/health/db" hx-swap="innerHTML" hx-target="#probe-db" class="btn btn-ghost btn-sm">اختبار قاعدة البيانات</button>
-        <button hx-get="/admin/api/health/hatif" hx-swap="innerHTML" hx-target="#probe-hatif" class="btn btn-ghost btn-sm">اختبار هاتف</button>
+      {% endif %}
+      <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.75rem;">
+        <button hx-get="/admin/api/health/db" hx-swap="innerHTML" hx-target="#probe-db" class="btn btn-ghost btn-sm">إعادة فحص القاعدة</button>
+        <button hx-get="/admin/api/health/hatif" hx-swap="innerHTML" hx-target="#probe-hatif" class="btn btn-ghost btn-sm">فحص هاتف</button>
+        <a href="/health" target="_blank" class="btn btn-ghost btn-sm">/health ↗</a>
       </div>
-      <pre id="probe-db" class="code-block" style="margin-top: 1rem; max-height: 120px;"></pre>
-      <pre id="probe-hatif" class="code-block" style="margin-top: 0.5rem; max-height: 120px;"></pre>
+      <div id="probe-db" class="probe-slot"></div>
+      <div id="probe-hatif" class="probe-slot"></div>
     </div>
   </div>
 </div>
+
+{% if stats.recent_failures %}
+<div class="card" style="margin-bottom: 2rem;">
+  <div class="card-header">
+    <h3>آخر المشاكل</h3>
+    <span class="badge badge-danger">{{ stats.recent_failures | length }}</span>
+  </div>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>النوع</th>
+          <th>الوقت</th>
+          <th>الجوال / القالب</th>
+          <th>التفسير</th>
+          <th>إجراء</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for f in stats.recent_failures %}
+        <tr>
+          <td>{% if f.kind == 'message' %}رسالة{% else %}تذكير{% endif %}</td>
+          <td class="ltr" style="font-size: 0.8rem; color: var(--text-muted);">{{ f.at[:16] if f.at else '—' }}</td>
+          <td>
+            <span class="ltr">{{ f.phone or '—' }}</span><br>
+            <span class="ltr font-mono" style="font-size: 0.75rem;">{{ f.template_name or '—' }}</span>
+          </td>
+          <td>
+            <strong style="color: var(--danger); font-size: 0.85rem;">{{ f.title }}</strong>
+            <p style="margin: 0.25rem 0 0; font-size: 0.85rem; color: var(--text-muted);">{{ f.message }}</p>
+            {% if f.hint %}<p style="margin: 0.2rem 0 0; font-size: 0.8rem; color: var(--text-dim);">💡 {{ f.hint }}</p>{% endif %}
+          </td>
+          <td><a href="{{ f.url }}" class="btn-link">عرض</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
 
 <div class="card">
   <div class="card-header">
@@ -101,15 +169,29 @@
       }
     });
   }
-  function formatProbe(el, xhr) {
+
+  function renderHealthProbe(el, xhr) {
     try {
       const j = JSON.parse(xhr.responseText);
-      el.textContent = (j.ok ? '✓ ' : '✗ ') + (j.message || JSON.stringify(j));
-    } catch (e) {}
+      const ok = j.ok;
+      const title = j.title || (ok ? 'يعمل' : 'مشكلة');
+      const msg = j.message_ar || j.message || JSON.stringify(j);
+      const hint = j.hint || '';
+      el.innerHTML =
+        '<div class="health-result ' + (ok ? 'health-ok' : 'health-bad') + '">' +
+        '<div class="health-result-head"><span class="health-dot"></span><strong>' + title + '</strong>' +
+        '<span class="health-status">' + (ok ? 'يعمل' : 'مشكلة') + '</span></div>' +
+        '<p class="health-message">' + msg + '</p>' +
+        (hint ? '<p class="health-hint">' + hint + '</p>' : '') +
+        '</div>';
+    } catch (e) {
+      el.innerHTML = '<div class="alert alert-danger">تعذر قراءة نتيجة الفحص</div>';
+    }
   }
+
   document.body.addEventListener('htmx:afterOnLoad', function(evt) {
     const t = evt.detail.target;
-    if (t.id === 'probe-db' || t.id === 'probe-hatif') formatProbe(t, evt.detail.xhr);
+    if (t && (t.id === 'probe-db' || t.id === 'probe-hatif')) renderHealthProbe(t, evt.detail.xhr);
   });
 </script>
 {% endblock %}

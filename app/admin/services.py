@@ -15,6 +15,7 @@ from app.models import (
     SentNotification,
     WebhookEvent,
 )
+from app.admin.errors import explain_error, humanize_error
 from app.services.rekaz import EVENT_TEMPLATE_MAP
 
 _MAPPING_CACHE: dict[str, str | None] | None = None
@@ -168,16 +169,122 @@ def get_dashboard_stats(db: Session) -> dict[str, Any]:
 
     last_sched_update = db.scalar(select(func.max(ScheduledMessage.updated_at)))
 
+    now = datetime.utcnow()
+    overdue_reminders = db.scalar(
+        select(func.count())
+        .select_from(ScheduledMessage)
+        .where(ScheduledMessage.status == "pending", ScheduledMessage.run_at < now)
+    ) or 0
+
+    recent_failed_messages = db.execute(
+        select(MessageLog)
+        .where(MessageLog.status == "failed")
+        .order_by(MessageLog.created_at.desc())
+        .limit(5)
+    ).scalars().all()
+
+    recent_failed_jobs = db.execute(
+        select(ScheduledMessage)
+        .where(ScheduledMessage.status == "failed")
+        .order_by(ScheduledMessage.updated_at.desc())
+        .limit(5)
+    ).scalars().all()
+
+    recent_failures: list[dict[str, Any]] = []
+    for m in recent_failed_messages:
+        raw = m.error_reason or m.provider_response or ""
+        ex = explain_error(raw[:500] if raw else None)
+        recent_failures.append(
+            {
+                "kind": "message",
+                "id": m.id,
+                "at": m.created_at.isoformat() if m.created_at else None,
+                "phone": m.phone,
+                "template_name": m.template_name,
+                "title": ex["title"],
+                "message": ex["message"],
+                "hint": ex["hint"],
+                "summary": humanize_error(raw[:500] if raw else None),
+                "url": f"/dashboard/messages/{m.id}",
+            }
+        )
+    for j in recent_failed_jobs:
+        ex = explain_error(j.last_error)
+        recent_failures.append(
+            {
+                "kind": "reminder",
+                "id": j.id,
+                "at": j.updated_at.isoformat() if j.updated_at else None,
+                "phone": j.to_phone,
+                "template_name": j.template_name,
+                "title": ex["title"],
+                "message": ex["message"],
+                "hint": ex["hint"],
+                "summary": humanize_error(j.last_error),
+                "url": "/dashboard/scheduled?status=failed",
+            }
+        )
+    recent_failures.sort(key=lambda x: x.get("at") or "", reverse=True)
+    recent_failures = recent_failures[:8]
+
+    alerts: list[dict[str, Any]] = []
+    if messages_failed_today > 0:
+        alerts.append(
+            {
+                "level": "danger",
+                "title": f"{messages_failed_today} رسالة فاشلة اليوم",
+                "message": "راجع السبب وصحّح القالب أو بيانات الحجز.",
+                "action_url": "/dashboard/messages?status=failed",
+                "action_label": "عرض الرسائل الفاشلة",
+            }
+        )
+    if failed_reminders > 0:
+        alerts.append(
+            {
+                "level": "warning",
+                "title": f"{failed_reminders} تذكير فاشل",
+                "message": "يمكن إعادة المحاولة بعد التأكد من القالب واتصال هاتف.",
+                "action_url": "/dashboard/scheduled?status=failed",
+                "action_label": "عرض التذكيرات الفاشلة",
+            }
+        )
+    if overdue_reminders > 0:
+        alerts.append(
+            {
+                "level": "warning",
+                "title": f"{overdue_reminders} تذكير متأخر",
+                "message": "وقت الإرسال مرّ دون إرسال — تحقق أن الخادم يعمل.",
+                "action_url": "/dashboard/scheduled?status=pending",
+                "action_label": "التذكيرات المعلّقة",
+            }
+        )
+    if pending_reminders > 10:
+        alerts.append(
+            {
+                "level": "info",
+                "title": f"{pending_reminders} تذكير في الانتظار",
+                "message": "الطابور كبير — طبيعي قبل مواعيد كثيرة.",
+                "action_url": "/dashboard/scheduled",
+                "action_label": "عرض الجدولة",
+            }
+        )
+
+    db_health = probe_database()
+
     return {
         "webhooks_today": webhooks_today,
         "messages_sent_today": messages_sent_today,
         "messages_failed_today": messages_failed_today,
         "pending_reminders": pending_reminders,
         "failed_reminders": failed_reminders,
+        "overdue_reminders": overdue_reminders,
         "recent_events": recent_rows,
         "chart_labels": chart_labels,
         "chart_counts": chart_counts,
         "last_scheduled_update": last_sched_update.isoformat() if last_sched_update else None,
+        "alerts": alerts,
+        "recent_failures": recent_failures,
+        "db_health": db_health,
     }
 
 
@@ -185,9 +292,22 @@ def probe_database() -> dict[str, Any]:
     try:
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
-        return {"ok": True, "message": "Database connection OK"}
+        return {
+            "ok": True,
+            "message": "اتصال قاعدة البيانات يعمل",
+            "message_ar": "اتصال قاعدة البيانات يعمل",
+            "title": "قاعدة البيانات",
+        }
     except Exception as exc:
-        return {"ok": False, "message": str(exc)}
+        ex = explain_error(str(exc))
+        return {
+            "ok": False,
+            "message": ex["message"],
+            "message_ar": ex["message"],
+            "hint": ex["hint"],
+            "title": "قاعدة البيانات",
+            "raw": str(exc),
+        }
 
 
 async def probe_hatif_token() -> dict[str, Any]:
@@ -195,9 +315,28 @@ async def probe_hatif_token() -> dict[str, Any]:
         from app.services.hatif import get_access_token
 
         token = await get_access_token()
+        if token:
+            return {
+                "ok": True,
+                "message": "تم الحصول على رمز هاتف بنجاح — الإرسال متاح",
+                "message_ar": "تم الحصول على رمز هاتف بنجاح — الإرسال متاح",
+                "title": "هاتف (Voxa)",
+            }
+        ex = explain_error("token empty")
         return {
-            "ok": bool(token),
-            "message": "Hatif access token acquired",
+            "ok": False,
+            "message": ex["message"],
+            "message_ar": ex["message"],
+            "hint": ex["hint"],
+            "title": "هاتف (Voxa)",
         }
     except Exception as exc:
-        return {"ok": False, "message": str(exc)}
+        ex = explain_error(str(exc))
+        return {
+            "ok": False,
+            "message": ex["message"],
+            "message_ar": ex["message"],
+            "hint": ex["hint"],
+            "title": "هاتف (Voxa)",
+            "raw": str(exc),
+        }
