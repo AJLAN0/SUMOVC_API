@@ -13,20 +13,16 @@ from app.models import MessageLog, ScheduledMessage, SentNotification, WebhookEv
 from app.services.hatif import format_provider_response, send_whatsapp_template, send_whatsapp_text
 from app.services.rekaz import (
     TEMPLATE_PARAM_SPECS,
-    _parse_dt,
     build_template_parameters,
     build_text_message,
     extract_fields,
     map_event_to_template,
     normalize_phone,
+    rekaz_start_to_utc,
 )
 
 router = APIRouter()
 logger = logging.getLogger("app.rekaz_webhook")
-
-# Riyadh offset (UTC+3) — used when Rekaz sends naive (no-tz) datetimes
-_RIYADH = timezone(timedelta(hours=3))
-
 
 # ── Auth guard ──────────────────────────────────────────────────────────
 
@@ -209,35 +205,13 @@ def _schedule_reminder(
         logger.info("reminder_schedule_skipped_no_start_dt", extra={"extra": {"request_id": request_id}})
         return
 
-    start_dt = _parse_dt(start_iso)
-    if not start_dt:
+    start_utc = rekaz_start_to_utc(start_iso)
+    if not start_utc:
         logger.warning(
             "reminder_schedule_skipped_parse_failed",
             extra={"extra": {"request_id": request_id, "start_dt_iso": start_iso}},
         )
         return
-
-    # ── Timezone-aware UTC conversion ──
-    # If Rekaz sent a tz-aware datetime (Z / +00:00), convert to UTC.
-    # If naive (no tz info), assume Riyadh (Asia/Riyadh = UTC+3).
-    if start_dt.tzinfo is not None:
-        start_utc = start_dt.astimezone(timezone.utc).replace(tzinfo=None)
-    else:
-        # Treat as Riyadh local → convert to UTC by subtracting 3 hours
-        start_utc = (start_dt.replace(tzinfo=_RIYADH)
-                     .astimezone(timezone.utc)
-                     .replace(tzinfo=None))
-        logger.info(
-            "reminder_naive_dt_assumed_riyadh",
-            extra={
-                "extra": {
-                    "request_id": request_id,
-                    "raw_iso": start_iso,
-                    "assumed_riyadh": start_dt.isoformat(),
-                    "converted_utc": start_utc.isoformat(),
-                }
-            },
-        )
 
     run_at = start_utc - timedelta(minutes=settings.REMINDER_BEFORE_MINUTES)
     now_utc = datetime.utcnow()
@@ -272,6 +246,12 @@ def _schedule_reminder(
     db.add(job)
     try:
         db.commit()
+        start_riyadh = start_utc.replace(tzinfo=timezone.utc).astimezone(
+            timezone(timedelta(hours=3))
+        )
+        run_at_riyadh = run_at.replace(tzinfo=timezone.utc).astimezone(
+            timezone(timedelta(hours=3))
+        )
         logger.info(
             "reminder_scheduled",
             extra={
@@ -279,7 +259,11 @@ def _schedule_reminder(
                     "request_id": request_id,
                     "job_id": job.id,
                     "to_phone": phone,
-                    "run_at": run_at.isoformat(),
+                    "run_at_utc": run_at.isoformat(),
+                    "run_at_riyadh": run_at_riyadh.strftime("%Y-%m-%d %H:%M"),
+                    "start_utc": start_utc.isoformat(),
+                    "start_riyadh": start_riyadh.strftime("%Y-%m-%d %H:%M"),
+                    "raw_start_iso": start_iso,
                     "reservation_number": fields.get("reservation_number"),
                     "before_minutes": settings.REMINDER_BEFORE_MINUTES,
                 }

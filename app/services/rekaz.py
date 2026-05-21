@@ -1,10 +1,13 @@
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
 logger = logging.getLogger("app.rekaz")
+
+# Rekaz reservation times are Saudi local; API often tags them as +00:00 or Z (not true UTC).
+_RIYADH = timezone(timedelta(hours=3))
 
 # ── Event → Template mapping ───────────────────────────────────────────
 EVENT_TEMPLATE_MAP = {
@@ -103,6 +106,37 @@ def _parse_dt(value: str | None) -> datetime | None:
         return datetime.fromisoformat(v)
     except Exception:
         return None
+
+
+def rekaz_start_to_utc(start_raw: str | None) -> datetime | None:
+    """
+    Convert Rekaz ``startDate`` to naive UTC for reminder scheduling.
+
+    Rekaz typically sends Asia/Riyadh wall time in one of these forms:
+    - ``2026-05-15T16:45:00`` (naive)
+    - ``2026-05-15T16:45:00+00:00`` or ``...Z`` (local time mislabeled as UTC)
+
+    True ``+03:00`` offsets are converted normally.
+    """
+    if not start_raw or not str(start_raw).strip():
+        return None
+
+    dt = _parse_dt(str(start_raw).strip())
+    if not dt:
+        return None
+
+    if dt.tzinfo is None:
+        local = dt.replace(tzinfo=_RIYADH)
+        return local.astimezone(timezone.utc).replace(tzinfo=None)
+
+    offset = dt.utcoffset()
+    if offset is not None and offset.total_seconds() == 0:
+        # Mislabeled UTC: keep clock time, interpret as Riyadh
+        wall = dt.replace(tzinfo=None)
+        local = wall.replace(tzinfo=_RIYADH)
+        return local.astimezone(timezone.utc).replace(tzinfo=None)
+
+    return dt.astimezone(timezone.utc).replace(tzinfo=None)
 
 
 def _fmt_date(dt: datetime | None) -> str:
