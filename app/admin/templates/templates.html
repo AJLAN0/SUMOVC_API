@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% from "_macros.html" import page_header, empty_row %}
+{% block title %}قوالب واتساب — SUMO{% endblock %}
+{% block content %}
+{{ page_header('قوالب واتساب', 'عرض وتعديل وإضافة القوالب ومتغيراتها — بدون تعديل الكود') }}
+
+<div class="alert alert-warning">
+  <strong>مهم:</strong> اسم القالب يجب أن يطابق الاسم المعرّف في هاتف (Voxa) حرفياً. ترتيب المتغيرات أدناه يطابق {{1}}، {{2}} في القالب.
+</div>
+
+<div class="split-layout" style="margin-bottom: 2rem;">
+  <div class="card">
+    <div class="card-header"><h3>إضافة قالب جديد</h3></div>
+    <div class="card-body">
+      <form method="post" action="/dashboard/templates/create">
+        <div class="form-group">
+          <label class="form-label">اسم القالب في هاتف <span style="color: var(--text-dim);">(إنجليزي)</span></label>
+          <input name="name" required placeholder="reservation_reminderrrr" class="form-input ltr font-mono" dir="ltr" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">الاسم بالعربي (للعرض في اللوحة)</label>
+          <input name="title_ar" placeholder="تذكير بالموعد" class="form-input" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">متغيرات القالب <span style="color: var(--text-dim);">سطر لكل متغير</span></label>
+          <textarea name="param_keys_text" required rows="6" class="form-input ltr font-mono" dir="ltr"
+            placeholder="customer_name&#10;branch_name"></textarea>
+          <p style="font-size: 0.8rem; color: var(--text-dim); margin-top: 0.35rem;">
+            أمثلة: customer_name، product_name، reservation_date، branch_name
+          </p>
+        </div>
+        <div class="form-group">
+          <label class="form-label">ملاحظة (اختياري)</label>
+          <input name="description" class="form-input" placeholder="وصف مختصر" />
+        </div>
+        <label style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem; cursor: pointer;">
+          <input type="checkbox" name="enabled" checked style="width: 1.1rem; height: 1.1rem;" /> مفعّل
+        </label>
+        <button type="submit" class="btn btn-primary" style="width: 100%;">إضافة القالب</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h3>المتغيرات الشائعة</h3></div>
+    <div class="card-body" style="font-size: 0.85rem; color: var(--text-muted);">
+      <p style="margin: 0 0 0.75rem;">عند جدولة تذكير أو إرسال من ركاز، تُملأ هذه الحقول تلقائياً من بيانات الحجز:</p>
+      <ul style="margin: 0; padding-right: 1.25rem; line-height: 1.8;">
+        {% for key, label in param_labels.items() %}
+        <li><span class="ltr font-mono" dir="ltr">{{ key }}</span> — {{ label }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header"><h3>القوالب المحفوظة</h3></div>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>الاسم بالعربي</th>
+          <th>اسم هاتف</th>
+          <th>عدد المتغيرات</th>
+          <th>مفعّل</th>
+          <th>إجراء</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in items %}
+        <tr id="row-tpl-{{ t.id or t.name }}">
+          <td>{{ t.title_ar }}</td>
+          <td class="ltr font-mono" style="font-size: 0.8rem;">{{ t.name }}</td>
+          <td>{{ t.param_count }}</td>
+          <td>{% if t.enabled %}<span class="badge badge-success">نعم</span>{% else %}<span class="badge badge-muted">لا</span>{% endif %}</td>
+          <td style="white-space: nowrap;">
+            {% if t.id %}
+            <a href="/dashboard/templates/{{ t.id }}/edit" class="btn-link">تعديل</a>
+            <button hx-delete="/admin/api/templates/{{ t.id }}" hx-target="#row-tpl-{{ t.id }}" hx-swap="outerHTML"
+              hx-confirm="حذف هذا القالب؟" class="btn btn-danger btn-sm">حذف</button>
+            {% else %}
+            <span style="color: var(--text-dim); font-size: 0.8rem;">افتراضي — أعد النشر للحفظ</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        {{ empty_row(5) }}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -1,55 +1,106 @@
 {% extends "base.html" %}
-{% block title %}Scheduled — SUMO Admin{% endblock %}
+{% from "_macros.html" import page_header, badge_status, status_ar, empty_row %}
+{% block title %}التذكيرات — SUMO{% endblock %}
 {% block content %}
-<h2 class="text-2xl font-semibold text-white mb-4">Scheduled reminders</h2>
-<div class="grid lg:grid-cols-2 gap-6 mb-8">
-  <form method="post" action="/dashboard/scheduled/create" class="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3 text-sm">
-    <h3 class="font-medium text-slate-300">Create reminder</h3>
-    <input name="to_phone" required placeholder="9665XXXXXXXX" class="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2" />
-    <select name="template_name" required class="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2">
-      {% for t in templates %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
-    </select>
-    <input name="params_json" value='["-","-"]' placeholder='["param1","param2"]' class="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2 font-mono text-xs" />
-    <input name="run_at" type="datetime-local" required class="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2" />
-    <input name="reservation_number" placeholder="Reservation #" class="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2" />
-    <button type="submit" class="w-full py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500">Schedule</button>
-  </form>
-  <form method="get" class="text-sm space-y-2">
-    <label class="text-slate-500">Filter status</label>
-    <select name="status" onchange="this.form.submit()" class="w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2">
-      <option value="">All</option>
-      {% for s in ['pending','sent','failed','canceled'] %}
-      <option value="{{ s }}" {% if status == s %}selected{% endif %}>{{ s }}</option>
-      {% endfor %}
-    </select>
-  </form>
+{{ page_header('التذكيرات المجدولة', 'جدولة رسائل واتساب قبل موعد الحجز — اختر القالب واملأ الحقول بسهولة') }}
+
+<div class="split-layout" style="margin-bottom: 2rem;">
+  <div class="card">
+    <div class="card-header"><h3>جدولة تذكير جديد</h3></div>
+    <div class="card-body">
+      <form method="post" action="/dashboard/scheduled/create" id="schedule-form">
+        <div class="form-group">
+          <label class="form-label">رقم الجوال</label>
+          <input name="to_phone" required placeholder="9665XXXXXXXX" class="form-input ltr" dir="ltr" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">قالب واتساب</label>
+          <select name="template_name" required class="form-select"
+            hx-get="/dashboard/partials/template-fields"
+            hx-target="#param-fields"
+            hx-trigger="change"
+            hx-include="#schedule-form">
+            <option value="">— اختر قالباً —</option>
+            {% for t in templates %}
+            <option value="{{ t.name }}">{{ t.title_ar }} ({{ t.name }})</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div id="param-fields" style="margin: 1rem 0;">
+          <p style="color: var(--text-dim); font-size: 0.9rem;">اختر قالباً لعرض حقول الرسالة</p>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">وقت الإرسال</label>
+          <input name="run_at" type="datetime-local" required class="form-input ltr" dir="ltr" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">رقم الحجز (اختياري)</label>
+          <input name="reservation_number" placeholder="10969071" class="form-input ltr" dir="ltr" />
+        </div>
+        <button type="submit" class="btn btn-primary" style="width: 100%;">جدولة التذكير</button>
+      </form>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header"><h3>تصفية القائمة</h3></div>
+    <div class="card-body">
+      <form method="get">
+        <div class="form-group">
+          <label class="form-label">حالة التذكير</label>
+          <select name="status" onchange="this.form.submit()" class="form-select">
+            <option value="">الكل</option>
+            {% for s in ['pending','sent','failed','canceled'] %}
+            <option value="{{ s }}" {% if status == s %}selected{% endif %}>{{ status_ar(s) }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </form>
+      <p style="color: var(--text-dim); font-size: 0.85rem; margin: 1rem 0 0;">
+        يُرسل التذكير قبل الموعد بعدد الدقائق المحدّد في إعدادات النظام
+        <strong class="ltr" dir="ltr">(REMINDER_BEFORE_MINUTES)</strong>.
+      </p>
+      <a href="/dashboard/templates" class="btn btn-ghost btn-sm" style="margin-top: 1rem;">إدارة قوالب واتساب</a>
+    </div>
+  </div>
 </div>
-<div class="bg-slate-900 border border-slate-800 rounded-xl overflow-x-auto">
-  <table class="w-full text-sm">
-    <thead class="text-slate-500 text-left bg-slate-950/50">
-      <tr><th class="px-3 py-2">Run at</th><th class="px-3 py-2">Phone</th><th class="px-3 py-2">Template</th><th class="px-3 py-2">Status</th><th class="px-3 py-2">Attempts</th><th class="px-3 py-2">Actions</th></tr>
-    </thead>
-    <tbody>
-      {% for j in items %}
-      <tr id="row-{{ j.id }}" class="border-t border-slate-800">
-        <td class="px-3 py-2 text-slate-400">{{ j.run_at.strftime('%Y-%m-%d %H:%M') if j.run_at else '—' }}</td>
-        <td class="px-3 py-2">{{ j.to_phone }}</td>
-        <td class="px-3 py-2 text-xs">{{ j.template_name }}</td>
-        <td class="px-3 py-2">{{ j.status }}</td>
-        <td class="px-3 py-2">{{ j.attempts }}{% if j.last_error %}<span class="text-red-400 text-xs block">{{ j.last_error[:40] }}</span>{% endif %}</td>
-        <td class="px-3 py-2 space-x-1 whitespace-nowrap">
-          <button hx-post="/admin/api/scheduled/{{ j.id }}/retry" hx-swap="none" onclick="location.reload()"
-            class="text-xs text-amber-400">Retry</button>
-          <button hx-post="/admin/api/scheduled/{{ j.id }}/cancel" hx-swap="none" onclick="location.reload()"
-            class="text-xs text-slate-400">Cancel</button>
-          <button hx-delete="/admin/api/scheduled/{{ j.id }}" hx-target="#row-{{ j.id }}" hx-swap="outerHTML" hx-confirm="Delete?"
-            class="text-xs text-red-400">Delete</button>
-        </td>
-      </tr>
-      {% else %}
-      <tr><td colspan="6" class="px-4 py-8 text-center text-slate-500">No scheduled jobs</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
+
+<div class="card">
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>وقت الإرسال</th>
+          <th>الجوال</th>
+          <th>القالب</th>
+          <th>الحالة</th>
+          <th>المحاولات</th>
+          <th>إجراءات</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for j in items %}
+        <tr id="row-{{ j.id }}">
+          <td class="ltr" style="color: var(--text-muted);">{{ j.run_at.strftime('%Y-%m-%d %H:%M') if j.run_at else '—' }}</td>
+          <td class="ltr">{{ j.to_phone }}</td>
+          <td>
+            <span class="ltr font-mono" dir="ltr" style="font-size: 0.75rem;">{{ j.template_name }}</span>
+          </td>
+          <td>{{ badge_status(j.status) }}</td>
+          <td>{{ j.attempts }}{% if j.last_error %}<span style="color: var(--danger); font-size: 0.75rem; display: block;">{{ j.last_error[:50] }}</span>{% endif %}</td>
+          <td style="white-space: nowrap;">
+            <button hx-post="/admin/api/scheduled/{{ j.id }}/retry" hx-swap="none" onclick="location.reload()" class="btn-link">إعادة</button>
+            <button hx-post="/admin/api/scheduled/{{ j.id }}/cancel" hx-swap="none" onclick="location.reload()" class="btn-link" style="color: var(--text-muted);">إلغاء</button>
+            <button hx-delete="/admin/api/scheduled/{{ j.id }}" hx-target="#row-{{ j.id }}" hx-swap="outerHTML"
+              hx-confirm="حذف هذا التذكير؟" class="btn btn-danger btn-sm">حذف</button>
+          </td>
+        </tr>
+        {% else %}
+        {{ empty_row(6, 'لا توجد تذكيرات مجدولة') }}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </div>
 {% endblock %}

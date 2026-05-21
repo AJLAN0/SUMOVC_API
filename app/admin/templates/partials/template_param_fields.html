@@ -1,0 +1,26 @@
+{# متغيرات القالب — يُحمّل عبر HTMX #}
+{% if not template_name %}
+<p style="color: var(--text-dim); font-size: 0.9rem; margin: 0;">اختر قالباً لعرض الحقول</p>
+{% elif not spec %}
+<p class="alert alert-warning" style="margin: 0;">لم يُعثر على متغيرات لهذا القالب. أضفه من قسم القوالب.</p>
+{% else %}
+<div style="background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 1rem;">
+  <p style="margin: 0 0 1rem; font-size: 0.85rem; color: var(--text-muted);">
+    متغيرات القالب <span class="ltr font-mono" dir="ltr">{{ template_name }}</span>
+    <span class="badge badge-info" style="margin-right: 0.5rem;">{{ spec|length }} حقول</span>
+  </p>
+  {% for key in spec %}
+  <div class="form-group" style="margin-bottom: 0.75rem;">
+    <label class="form-label">
+      {{ param_labels.get(key, key) }}
+      <span class="ltr font-mono" dir="ltr" style="color: var(--text-dim); font-size: 0.75rem; font-weight: 400;"> — {{ key }}</span>
+    </label>
+    <input type="text" name="param__{{ key }}" value="{{ default_placeholder }}"
+      class="form-input" placeholder="مثال: {{ param_labels.get(key, key) }}" />
+  </div>
+  {% endfor %}
+  <p style="margin: 0.75rem 0 0; font-size: 0.8rem; color: var(--text-dim);">
+    ترتيب الحقول يطابق ترتيب متغيرات القالب في هاتف ({{1}}، {{2}}، …). الحقول الفارغة تُستبدل بـ «-» تلقائياً.
+  </p>
+</div>
+{% endif %}

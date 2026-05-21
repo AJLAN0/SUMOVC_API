@@ -12,7 +12,6 @@ from app.database import SessionLocal
 from app.models import MessageLog, ScheduledMessage, SentNotification, WebhookEvent
 from app.services.hatif import format_provider_response, send_whatsapp_template, send_whatsapp_text
 from app.services.rekaz import (
-    TEMPLATE_PARAM_SPECS,
     build_template_parameters,
     build_text_message,
     extract_fields,
@@ -125,7 +124,10 @@ async def _send_admin_notifications(
     admin_template = "admin_reservation_confirmedddd"
     language = "en"
     admin_params = build_template_parameters(
-        admin_template, fields, placeholder=settings.EMPTY_PARAM_PLACEHOLDER,
+        admin_template,
+        fields,
+        placeholder=settings.EMPTY_PARAM_PLACEHOLDER,
+        db=db,
     )
 
     for admin_phone in admin_phones:
@@ -230,8 +232,10 @@ def _schedule_reminder(
         return
 
     reminder_params = build_template_parameters(
-        "reservation_reminderrrr", fields,
+        "reservation_reminderrrr",
+        fields,
         placeholder=settings.EMPTY_PARAM_PLACEHOLDER,
+        db=db,
     )
 
     job = ScheduledMessage(
@@ -507,11 +511,20 @@ async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
 
             if not is_duplicate:
                 parameters = build_template_parameters(
-                    template_name, fields, placeholder=settings.EMPTY_PARAM_PLACEHOLDER,
+                    template_name,
+                    fields,
+                    placeholder=settings.EMPTY_PARAM_PLACEHOLDER,
+                    db=db,
                 )
 
                 # ── Param-count pre-flight check ──
-                expected = TEMPLATE_PARAM_SPECS.get(template_name)
+                from app.services.template_catalog import get_spec_for_template
+
+                expected = get_spec_for_template(db, template_name) or None
+                if not expected:
+                    from app.services.rekaz import TEMPLATE_PARAM_SPECS
+
+                    expected = TEMPLATE_PARAM_SPECS.get(template_name)
                 if expected is not None and len(parameters) != len(expected):
                     logger.error(
                         "rekaz_param_count_mismatch",

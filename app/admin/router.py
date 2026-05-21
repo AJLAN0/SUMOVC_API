@@ -25,8 +25,18 @@ from app.models import (
     ScheduledMessage,
     SentNotification,
     WebhookEvent,
+    WhatsAppTemplate,
 )
-from app.services.rekaz import TEMPLATE_PARAM_SPECS
+from app.services.template_catalog import (
+    PARAM_LABELS_AR,
+    _parse_param_keys,
+    build_params_from_form,
+    get_spec_for_template,
+    invalidate_template_cache,
+    list_all_templates,
+    list_enabled_templates,
+    param_keys_to_json,
+)
 
 router = APIRouter(tags=["admin-pages"])
 
@@ -68,14 +78,14 @@ async def login_submit(
         return templates.TemplateResponse(
             request,
             "login.html",
-            {"configured": False, "error": "Admin is not configured on the server."},
+            {"configured": False, "error": "لوحة التحكم غير مُعدّة على الخادم."},
             status_code=503,
         )
     if is_login_rate_limited(request):
         return templates.TemplateResponse(
             request,
             "login.html",
-            {"configured": True, "error": "Too many failed attempts. Try again in 15 minutes."},
+            {"configured": True, "error": "محاولات كثيرة فاشلة. حاول بعد ١٥ دقيقة."},
             status_code=429,
         )
     if not authenticate(email, password):
@@ -83,7 +93,7 @@ async def login_submit(
         return templates.TemplateResponse(
             request,
             "login.html",
-            {"configured": True, "error": "Invalid email or password."},
+            {"configured": True, "error": "البريد الإلكتروني أو كلمة المرور غير صحيحة."},
             status_code=401,
         )
     clear_login_failures(request)
@@ -256,7 +266,30 @@ async def scheduled_page(
             "page": page,
             "total": total,
             "status": status or "",
-            "templates": list(TEMPLATE_PARAM_SPECS.keys()),
+            "templates": list_enabled_templates(db),
+        },
+    )
+
+
+@router.get("/dashboard/partials/template-fields", response_class=HTMLResponse)
+async def template_fields_partial(
+    request: Request,
+    auth: str | RedirectResponse = Depends(require_admin_page),
+    db: Session = Depends(get_db),
+    template_name: str = "",
+):
+    if redir := _auth_or_redirect(auth):
+        return redir
+    name = (template_name or request.query_params.get("template_name") or "").strip()
+    spec = get_spec_for_template(db, name) if name else []
+    return templates.TemplateResponse(
+        request,
+        "partials/template_param_fields.html",
+        {
+            "template_name": name,
+            "spec": spec,
+            "param_labels": PARAM_LABELS_AR,
+            "default_placeholder": "-",
         },
     )
 
@@ -266,30 +299,134 @@ async def scheduled_create(
     request: Request,
     auth: str | RedirectResponse = Depends(require_admin_page),
     db: Session = Depends(get_db),
-    to_phone: str = Form(...),
-    template_name: str = Form(...),
-    params_json: str = Form("[]"),
-    run_at: str = Form(...),
-    reservation_number: str = Form(""),
-    status: str = Form("pending"),
 ):
     if redir := _auth_or_redirect(auth):
         return redir
+    form = await request.form()
+    to_phone = str(form.get("to_phone", "")).strip()
+    template_name = str(form.get("template_name", "")).strip()
+    run_at = str(form.get("run_at", ""))
+    reservation_number = str(form.get("reservation_number", "")).strip()
+    status = str(form.get("status", "pending") or "pending")
+    spec = get_spec_for_template(db, template_name)
+    params = build_params_from_form(spec, dict(form))
+    params_json = json.dumps(params, ensure_ascii=False)
     try:
         run_at_dt = datetime.fromisoformat(run_at.replace("Z", "+00:00")).replace(tzinfo=None)
     except ValueError:
         run_at_dt = datetime.utcnow()
     row = ScheduledMessage(
-        to_phone=to_phone.strip(),
-        template_name=template_name.strip(),
-        params_json=params_json.strip() or "[]",
+        to_phone=to_phone,
+        template_name=template_name,
+        params_json=params_json,
         run_at=run_at_dt,
-        reservation_number=reservation_number.strip() or None,
+        reservation_number=reservation_number or None,
         status=status,
     )
     db.add(row)
     db.commit()
     return RedirectResponse("/dashboard/scheduled", status_code=302)
+
+
+@router.get("/dashboard/templates", response_class=HTMLResponse)
+async def templates_page(
+    request: Request,
+    auth: str | RedirectResponse = Depends(require_admin_page),
+    db: Session = Depends(get_db),
+):
+    if redir := _auth_or_redirect(auth):
+        return redir
+    return templates.TemplateResponse(
+        request,
+        "templates.html",
+        {
+            "active": "templates",
+            "items": list_all_templates(db),
+            "param_labels": PARAM_LABELS_AR,
+        },
+    )
+
+
+@router.post("/dashboard/templates/create", response_class=HTMLResponse)
+async def templates_create(
+    request: Request,
+    auth: str | RedirectResponse = Depends(require_admin_page),
+    db: Session = Depends(get_db),
+    name: str = Form(...),
+    param_keys_text: str = Form(...),
+    title_ar: str = Form(""),
+    description: str = Form(""),
+    enabled: str = Form("on"),
+):
+    if redir := _auth_or_redirect(auth):
+        return redir
+    keys = _parse_param_keys(param_keys_text)
+    if keys:
+        row = WhatsAppTemplate(
+            name=name.strip(),
+            title_ar=title_ar.strip() or None,
+            description=description.strip() or None,
+            param_keys_json=param_keys_to_json(keys),
+            enabled=enabled == "on",
+            updated_at=datetime.utcnow(),
+        )
+        db.add(row)
+        db.commit()
+        invalidate_template_cache()
+    return RedirectResponse("/dashboard/templates", status_code=302)
+
+
+@router.get("/dashboard/templates/{template_id}/edit", response_class=HTMLResponse)
+async def templates_edit_page(
+    request: Request,
+    template_id: str,
+    auth: str | RedirectResponse = Depends(require_admin_page),
+    db: Session = Depends(get_db),
+):
+    if redir := _auth_or_redirect(auth):
+        return redir
+    tpl = db.get(WhatsAppTemplate, template_id)
+    if not tpl:
+        return RedirectResponse("/dashboard/templates", status_code=302)
+    from app.services.template_catalog import param_keys_from_json
+
+    keys = param_keys_from_json(tpl.param_keys_json)
+    return templates.TemplateResponse(
+        request,
+        "templates_edit.html",
+        {
+            "active": "templates",
+            "tpl": tpl,
+            "param_keys_text": "\n".join(keys),
+        },
+    )
+
+
+@router.post("/dashboard/templates/{template_id}/edit", response_class=HTMLResponse)
+async def templates_edit_submit(
+    request: Request,
+    template_id: str,
+    auth: str | RedirectResponse = Depends(require_admin_page),
+    db: Session = Depends(get_db),
+    title_ar: str = Form(""),
+    param_keys_text: str = Form(...),
+    description: str = Form(""),
+    enabled: str = Form(""),
+):
+    if redir := _auth_or_redirect(auth):
+        return redir
+    tpl = db.get(WhatsAppTemplate, template_id)
+    if tpl:
+        keys = _parse_param_keys(param_keys_text)
+        if keys:
+            tpl.title_ar = title_ar.strip() or None
+            tpl.description = description.strip() or None
+            tpl.param_keys_json = param_keys_to_json(keys)
+            tpl.enabled = enabled == "on"
+            tpl.updated_at = datetime.utcnow()
+            db.commit()
+            invalidate_template_cache()
+    return RedirectResponse("/dashboard/templates", status_code=302)
 
 
 @router.get("/dashboard/locks", response_class=HTMLResponse)
@@ -329,7 +466,7 @@ async def mappings_page(
         {
             "active": "mappings",
             "items": items,
-            "known_templates": list(TEMPLATE_PARAM_SPECS.keys()),
+            "template_list": list_enabled_templates(db),
         },
     )
 
@@ -390,12 +527,15 @@ async def system_page(
     if redir := _auth_or_redirect(auth):
         return redir
     mapping_count = db.scalar(select(func.count()).select_from(EventTemplateMapping)) or 0
+    from app.admin.i18n import SETTINGS_LABELS_AR
+
     return templates.TemplateResponse(
         request,
         "system.html",
         {
             "active": "system",
             "settings": settings.admin_settings_masked(),
+            "settings_labels": SETTINGS_LABELS_AR,
             "mapping_count": mapping_count,
             "db_probe": probe_database(),
         },

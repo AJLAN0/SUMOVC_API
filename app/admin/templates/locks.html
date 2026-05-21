@@ -1,29 +1,42 @@
 {% extends "base.html" %}
-{% block title %}Idempotency Locks — SUMO Admin{% endblock %}
+{% from "_macros.html" import page_header, empty_row %}
+{% block title %}قفل التكرار — SUMO{% endblock %}
 {% block content %}
-<h2 class="text-2xl font-semibold text-white mb-2">Idempotency locks</h2>
-<p class="text-amber-400/90 text-sm mb-4">Deleting a lock allows the same notification to be sent again for that reservation.</p>
-<div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
-  <table class="w-full text-sm">
-    <thead class="text-slate-500 text-left bg-slate-950/50">
-      <tr><th class="px-4 py-2">Time</th><th class="px-4 py-2">Reservation</th><th class="px-4 py-2">Type</th><th class="px-4 py-2">Phone</th><th></th></tr>
-    </thead>
-    <tbody>
-      {% for lock in items %}
-      <tr id="row-{{ lock.id }}" class="border-t border-slate-800">
-        <td class="px-4 py-2 text-slate-400">{{ lock.created_at.strftime('%Y-%m-%d %H:%M') if lock.created_at else '—' }}</td>
-        <td class="px-4 py-2">{{ lock.reservation_number }}</td>
-        <td class="px-4 py-2">{{ lock.notification_type }}</td>
-        <td class="px-4 py-2">{{ lock.phone }}</td>
-        <td class="px-4 py-2 text-right">
-          <button hx-delete="/admin/api/locks/{{ lock.id }}" hx-target="#row-{{ lock.id }}" hx-swap="outerHTML" hx-confirm="Remove lock? Customer message may send again."
-            class="text-red-400 text-xs">Delete lock</button>
-        </td>
-      </tr>
-      {% else %}
-      <tr><td colspan="5" class="px-4 py-8 text-center text-slate-500">No locks</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
+{{ page_header('قفل التكرار', 'يمنع إرسال نفس الإشعار مرتين لنفس الحجز') }}
+
+<div class="alert alert-warning">
+  <strong>تنبيه:</strong> حذف القفل يسمح بإرسال رسالة التأكيد مرة أخرى لنفس رقم الحجز والعميل.
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>الوقت</th>
+          <th>رقم الحجز</th>
+          <th>نوع الإشعار</th>
+          <th>الجوال</th>
+          <th>إجراء</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for lock in items %}
+        <tr id="row-{{ lock.id }}">
+          <td class="ltr" style="color: var(--text-muted);">{{ lock.created_at.strftime('%Y-%m-%d %H:%M') if lock.created_at else '—' }}</td>
+          <td class="ltr">{{ lock.reservation_number }}</td>
+          <td class="ltr font-mono" style="font-size: 0.8rem;">{{ lock.notification_type }}</td>
+          <td class="ltr">{{ lock.phone }}</td>
+          <td>
+            <button hx-delete="/admin/api/locks/{{ lock.id }}" hx-target="#row-{{ lock.id }}" hx-swap="outerHTML"
+              hx-confirm="إزالة القفل؟ قد تُرسل رسالة مكررة للعميل." class="btn btn-danger btn-sm">إزالة القفل</button>
+          </td>
+        </tr>
+        {% else %}
+        {{ empty_row(5, 'لا توجد أقفال') }}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </div>
 {% endblock %}

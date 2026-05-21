@@ -21,8 +21,15 @@ from app.models import (
     ScheduledMessage,
     SentNotification,
     WebhookEvent,
+    WhatsAppTemplate,
 )
-from app.services.rekaz import TEMPLATE_PARAM_SPECS
+from app.services.template_catalog import (
+    invalidate_template_cache,
+    list_enabled_templates,
+    param_keys_from_json,
+    param_keys_to_json,
+    _parse_param_keys,
+)
 
 router = APIRouter(prefix="/admin/api", tags=["admin-api"])
 
@@ -81,8 +88,123 @@ async def api_health_hatif(_: str = Depends(require_admin_api)):
 
 
 @router.get("/template-specs")
-def api_template_specs(_: str = Depends(require_admin_api)):
-    return {"templates": list(TEMPLATE_PARAM_SPECS.keys())}
+def api_template_specs(
+    _: str = Depends(require_admin_api),
+    db: Session = Depends(get_db),
+):
+    items = list_enabled_templates(db)
+    return {"templates": [{"name": t["name"], "title_ar": t["title_ar"]} for t in items if t.get("enabled")]}
+
+
+class TemplateCreate(BaseModel):
+    name: str
+    title_ar: str | None = None
+    description: str | None = None
+    param_keys_text: str  # one per line
+    enabled: bool = True
+
+
+class TemplateUpdate(BaseModel):
+    title_ar: str | None = None
+    description: str | None = None
+    param_keys_text: str | None = None
+    enabled: bool | None = None
+
+
+@router.get("/templates")
+def api_list_templates(
+    _: str = Depends(require_admin_api),
+    db: Session = Depends(get_db),
+):
+    return {"items": list_enabled_templates(db)}
+
+
+@router.get("/templates/{template_id}")
+def api_get_template(
+    template_id: str,
+    _: str = Depends(require_admin_api),
+    db: Session = Depends(get_db),
+):
+    row = db.get(WhatsAppTemplate, template_id)
+    if not row:
+        raise HTTPException(404, "Template not found")
+    keys = param_keys_from_json(row.param_keys_json)
+    return {
+        "id": row.id,
+        "name": row.name,
+        "title_ar": row.title_ar,
+        "description": row.description,
+        "param_keys": keys,
+        "param_keys_text": "\n".join(keys),
+        "enabled": row.enabled,
+    }
+
+
+@router.post("/templates")
+def api_create_template(
+    body: TemplateCreate,
+    _: str = Depends(require_admin_api),
+    db: Session = Depends(get_db),
+):
+    keys = _parse_param_keys(body.param_keys_text)
+    if not keys:
+        raise HTTPException(400, "أضف متغيراً واحداً على الأقل")
+    row = WhatsAppTemplate(
+        name=body.name.strip(),
+        title_ar=(body.title_ar or "").strip() or None,
+        description=body.description,
+        param_keys_json=param_keys_to_json(keys),
+        enabled=body.enabled,
+        updated_at=datetime.utcnow(),
+    )
+    db.add(row)
+    try:
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(400, f"تعذر الحفظ: {exc}") from exc
+    invalidate_template_cache()
+    db.refresh(row)
+    return {"id": row.id}
+
+
+@router.patch("/templates/{template_id}")
+def api_update_template(
+    template_id: str,
+    body: TemplateUpdate,
+    _: str = Depends(require_admin_api),
+    db: Session = Depends(get_db),
+):
+    row = db.get(WhatsAppTemplate, template_id)
+    if not row:
+        raise HTTPException(404, "Template not found")
+    data = body.model_dump(exclude_unset=True)
+    if "param_keys_text" in data:
+        keys = _parse_param_keys(data.pop("param_keys_text") or "")
+        if not keys:
+            raise HTTPException(400, "أضف متغيراً واحداً على الأقل")
+        row.param_keys_json = param_keys_to_json(keys)
+    for field, value in data.items():
+        setattr(row, field, value)
+    row.updated_at = datetime.utcnow()
+    db.commit()
+    invalidate_template_cache()
+    return {"ok": True}
+
+
+@router.delete("/templates/{template_id}")
+def api_delete_template(
+    template_id: str,
+    _: str = Depends(require_admin_api),
+    db: Session = Depends(get_db),
+):
+    row = db.get(WhatsAppTemplate, template_id)
+    if not row:
+        raise HTTPException(404, "Template not found")
+    db.delete(row)
+    db.commit()
+    invalidate_template_cache()
+    return {"ok": True}
 
 
 # ── Webhook events ──────────────────────────────────────────────────────
@@ -438,7 +560,7 @@ def api_list_mappings(
             }
             for i in items
         ],
-        "known_templates": list(TEMPLATE_PARAM_SPECS.keys()),
+        "known_templates": [t["name"] for t in list_enabled_templates(db)],
     }
 
 

@@ -104,13 +104,16 @@ def init_db() -> None:
 
 def _seed_event_mappings() -> None:
     from app.admin.services import seed_event_mappings
+    from app.services.template_catalog import seed_whatsapp_templates
 
     db = SessionLocal()
     try:
+        seed_whatsapp_templates(db)
+        logger.info("whatsapp_templates_seeded")
         seed_event_mappings(db)
         logger.info("event_template_mappings_seeded")
     except Exception as exc:
-        logger.warning("event_template_mappings_seed_failed", extra={"extra": {"error": str(exc)}})
+        logger.warning("db_seed_failed", extra={"extra": {"error": str(exc)}})
         db.rollback()
     finally:
         db.close()

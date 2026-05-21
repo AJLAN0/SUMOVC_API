@@ -1,0 +1,41 @@
+{# Arabic UI helpers — keep event names, templates, IDs in LTR #}
+
+{% macro status_ar(s) -%}
+  {%- if s == 'success' -%}نجح
+  {%- elif s == 'failed' -%}فشل
+  {%- elif s == 'pending' -%}قيد الانتظار
+  {%- elif s == 'sent' -%}تم الإرسال
+  {%- elif s == 'canceled' -%}ملغى
+  {%- else -%}{{ s }}
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro badge_status(s) -%}
+<span class="badge {% if s == 'success' or s == 'sent' %}badge-success{% elif s == 'failed' %}badge-danger{% elif s == 'pending' %}badge-warning{% else %}badge-muted{% endif %}">{{ status_ar(s) }}</span>
+{%- endmacro %}
+
+{% macro page_header(title, subtitle='') %}
+<div class="page-header">
+  <h2>{{ title }}</h2>
+  {% if subtitle %}<p class="subtitle">{{ subtitle }}</p>{% endif %}
+</div>
+{% endmacro %}
+
+{% macro stat_card(label, value, accent='#2dd4bf', value_color='') %}
+<div class="stat-card" style="--stat-accent: {{ accent }}; {% if value_color %}--stat-value: {{ value_color }};{% endif %}">
+  <div class="label">{{ label }}</div>
+  <div class="value">{{ value }}</div>
+</div>
+{% endmacro %}
+
+{% macro btn_primary(text, type='submit') %}
+<button type="{{ type }}" class="btn btn-primary">{{ text }}</button>
+{% endmacro %}
+
+{% macro btn_ghost(text, type='button') %}
+<button type="{{ type }}" class="btn btn-ghost">{{ text }}</button>
+{% endmacro %}
+
+{% macro empty_row(colspan, message='لا توجد بيانات') %}
+<tr><td colspan="{{ colspan }}"><div class="empty-state"><div class="icon">📭</div>{{ message }}</div></td></tr>
+{% endmacro %}

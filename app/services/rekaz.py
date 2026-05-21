@@ -231,6 +231,7 @@ def build_template_parameters(
     template_name: str,
     fields: dict[str, str],
     placeholder: str = "-",
+    db: Session | None = None,
 ) -> list[str]:
     """
     Look up the ordered BODY param spec for *template_name* and return a list
@@ -240,13 +241,16 @@ def build_template_parameters(
     ``EMPTY_PARAM_PLACEHOLDER``) so Hatif never receives blank body params
     (empty body params cause HTTP 500 from Hatif).
     """
-    spec = TEMPLATE_PARAM_SPECS.get(template_name)
+    from app.services.template_catalog import get_template_specs
+
+    specs = get_template_specs(db)
+    spec = specs.get(template_name)
     if spec is None:
+        spec = TEMPLATE_PARAM_SPECS.get(template_name) or _FALLBACK_SPEC
         logger.warning(
             "template_spec_missing",
-            extra={"extra": {"template_name": template_name, "fallback_spec": _FALLBACK_SPEC}},
+            extra={"extra": {"template_name": template_name, "fallback_spec": spec}},
         )
-        spec = _FALLBACK_SPEC
 
     params = [fields.get(key, "") or placeholder for key in spec]
     logger.info(

@@ -1,44 +1,84 @@
 {% extends "base.html" %}
-{% block title %}Event Mappings — SUMO Admin{% endblock %}
+{% from "_macros.html" import page_header, empty_row %}
+{% block title %}ربط الأحداث — SUMO{% endblock %}
 {% block content %}
-<h2 class="text-2xl font-semibold text-white mb-4">Rekaz event → Hatif template</h2>
-<div class="grid lg:grid-cols-2 gap-6">
-  <form method="post" action="/dashboard/mappings/create" class="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3 text-sm h-fit">
-    <h3 class="font-medium text-slate-300">Add mapping</h3>
-    <input name="event_name" required placeholder="ReservationCreatedEvent" class="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2" />
-    <select name="template_name" required class="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2">
-      {% for t in known_templates %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
-    </select>
-    <input name="description" placeholder="Note (optional)" class="w-full rounded-lg bg-slate-800 border border-slate-700 px-3 py-2" />
-    <label class="flex items-center gap-2 text-slate-400"><input type="checkbox" name="enabled" checked class="rounded" /> Enabled</label>
-    <button type="submit" class="w-full py-2 rounded-lg bg-indigo-600">Add</button>
-  </form>
-  <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
-    <table class="w-full text-sm">
-      <thead class="text-slate-500 text-left bg-slate-950/50">
-        <tr><th class="px-4 py-2">Event</th><th class="px-4 py-2">Template</th><th class="px-4 py-2">On</th><th></th></tr>
-      </thead>
-      <tbody>
-        {% for m in items %}
-        <tr id="row-{{ m.id }}" class="border-t border-slate-800">
-          <td class="px-4 py-2 font-mono text-xs">{{ m.event_name }}</td>
-          <td class="px-4 py-2 text-xs">{{ m.template_name }}</td>
-          <td class="px-4 py-2">
-            <form method="post" action="/dashboard/mappings/{{ m.id }}/toggle">
-              <button type="submit" class="{% if m.enabled %}text-emerald-400{% else %}text-slate-500{% endif %} text-xs">{{ 'Yes' if m.enabled else 'No' }}</button>
-            </form>
-          </td>
-          <td class="px-4 py-2 text-right">
-            <button hx-delete="/admin/api/mappings/{{ m.id }}" hx-target="#row-{{ m.id }}" hx-swap="outerHTML" hx-confirm="Delete mapping?"
-              class="text-red-400 text-xs">Delete</button>
-          </td>
-        </tr>
-        {% else %}
-        <tr><td colspan="4" class="px-4 py-8 text-center text-slate-500">No mappings — defaults from code may apply</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
+{{ page_header('ربط الأحداث بالقوالب', 'حدد أي حدث من ركاز يرسل أي قالب واتساب — أسماء الأحداث والقوالب كما في الأنظمة') }}
+
+<div class="split-layout">
+  <div class="card">
+    <div class="card-header"><h3>إضافة ربط جديد</h3></div>
+    <div class="card-body">
+      <form method="post" action="/dashboard/mappings/create">
+        <div class="form-group">
+          <label class="form-label">حدث ركاز</label>
+          <input name="event_name" required placeholder="ReservationCreatedEvent" class="form-input ltr font-mono" dir="ltr" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">قالب هاتف</label>
+          <select name="template_name" required class="form-select">
+            {% for t in template_list %}
+            <option value="{{ t.name }}">{{ t.title_ar }} ({{ t.name }})</option>
+            {% endfor %}
+          </select>
+          <p style="font-size: 0.8rem; color: var(--text-dim); margin-top: 0.35rem;">
+            <a href="/dashboard/templates">إدارة القوالب</a>
+          </p>
+        </div>
+        <div class="form-group">
+          <label class="form-label">ملاحظة (اختياري)</label>
+          <input name="description" placeholder="مثال: عند إنشاء حجز جديد" class="form-input" />
+        </div>
+        <label style="display: flex; align-items: center; gap: 0.5rem; color: var(--text-muted); margin-bottom: 1rem; cursor: pointer;">
+          <input type="checkbox" name="enabled" checked style="width: 1.1rem; height: 1.1rem;" />
+          مفعّل
+        </label>
+        <button type="submit" class="btn btn-primary" style="width: 100%;">إضافة</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h3>الروابط الحالية</h3></div>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>حدث ركاز</th>
+            <th>قالب واتساب</th>
+            <th>مفعّل</th>
+            <th>إجراء</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for m in items %}
+          <tr id="row-{{ m.id }}">
+            <td class="ltr font-mono" style="font-size: 0.8rem;">{{ m.event_name }}</td>
+            <td class="ltr font-mono" style="font-size: 0.8rem;">{{ m.template_name }}</td>
+            <td>
+              <form method="post" action="/dashboard/mappings/{{ m.id }}/toggle" style="display: inline;">
+                <button type="submit" class="btn btn-sm {% if m.enabled %}badge-success{% else %}badge-muted{% endif %}" style="border: none; cursor: pointer;">
+                  {{ 'نعم' if m.enabled else 'لا' }}
+                </button>
+              </form>
+            </td>
+            <td>
+              <button hx-delete="/admin/api/mappings/{{ m.id }}" hx-target="#row-{{ m.id }}" hx-swap="outerHTML"
+                hx-confirm="حذف هذا الربط؟" class="btn btn-danger btn-sm">حذف</button>
+            </td>
+          </tr>
+          {% else %}
+          {{ empty_row(4, 'لا توجد روابط — سيتم استخدام الافتراضي من النظام') }}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </div>
 </div>
-<p class="text-slate-500 text-xs mt-4">Known templates: {{ known_templates | join(', ') }}</p>
+
+<p style="color: var(--text-dim); font-size: 0.85rem; margin-top: 1.5rem;">
+  القوالب المفعّلة:
+  {% for t in template_list %}
+  <span class="ltr font-mono" dir="ltr">{{ t.name }}</span>{% if not loop.last %} · {% endif %}
+  {% endfor %}
+</p>
 {% endblock %}
