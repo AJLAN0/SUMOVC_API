@@ -49,7 +49,7 @@ DEFAULT_MAPPING_SEEDS: list[dict[str, Any]] = [
     },
     {
         "event_name": "GiftCreatedEvent",
-        "template_name": "gifft_send",
+        "template_name": "gift_clint_send",
         "enabled": True,
         "description": "Gift WhatsApp to RecipientCustomer",
         "staff_role": "portrait_technician",
@@ -73,14 +73,13 @@ def seed_event_mappings(db: Session) -> None:
         ).scalar_one_or_none()
         if existing:
             # One-time upgrade: gift mapping may exist disabled with empty template
-            if (
-                seed["event_name"] == "GiftCreatedEvent"
-                and (not existing.template_name or not existing.template_name.strip())
-                and seed.get("template_name")
-            ):
-                existing.template_name = seed["template_name"]
-                existing.enabled = seed.get("enabled", existing.enabled)
-                existing.staff_role = seed.get("staff_role") or existing.staff_role
+            if seed["event_name"] == "GiftCreatedEvent" and seed.get("template_name"):
+                if not existing.template_name or not existing.template_name.strip():
+                    existing.template_name = seed["template_name"]
+                    existing.enabled = seed.get("enabled", existing.enabled)
+                elif existing.template_name in ("gifft_send", "sent_gifft"):
+                    existing.template_name = seed["template_name"]
+                existing.staff_role = seed.get("staff_role") or existing.staff_role or "admin"
                 existing.description = seed.get("description") or existing.description
                 existing.updated_at = datetime.utcnow()
             continue

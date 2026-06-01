@@ -29,13 +29,26 @@ DEFAULT_TEMPLATE_SPECS: dict[str, list[str]] = {
         "product_name",
         "branch_name",
     ],
-    "sent_gifft": [
+    "gift_clint_send": [
+        "recipient_name",
         "from_name",
-        "gift_coupon_code",
+        "message",
+        "product_name",
+        "redemption_url",
+    ],
+    "sent_gifft": [
+        "recipient_name",
+        "from_name",
+        "message",
+        "product_name",
+        "redemption_url",
     ],
     "gifft_send": [
+        "recipient_name",
         "from_name",
-        "gift_coupon_code",
+        "message",
+        "product_name",
+        "redemption_url",
     ],
 }
 
@@ -47,13 +60,17 @@ DEFAULT_TEMPLATE_META: dict[str, dict[str, str]] = {
         "title_ar": "تأكيد للمشرف",
         "description": "إشعار المشرفين",
     },
+    "gift_clint_send": {
+        "title_ar": "إرسال الهدية للمستلم",
+        "description": "رسالة واتساب للمستلم (RecipientCustomer) — 5 متغيرات",
+    },
     "sent_gifft": {
         "title_ar": "إرسال الهدية للمستلم (قديم)",
-        "description": "استخدم gifft_send",
+        "description": "استخدم gift_clint_send",
     },
     "gifft_send": {
-        "title_ar": "إرسال الهدية للمستلم",
-        "description": "رسالة واتساب للمستلم (RecipientCustomer)",
+        "title_ar": "إرسال الهدية للمستلم (قديم)",
+        "description": "استخدم gift_clint_send",
     },
 }
 

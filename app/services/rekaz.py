@@ -13,7 +13,7 @@ _RIYADH = timezone(timedelta(hours=3))
 EVENT_TEMPLATE_MAP = {
     "ReservationConfirmedEvent": "reservation_confirmedddddddd",
     "ReservationCancelledEvent": "reservation_cancelled",
-    "GiftCreatedEvent": "gifft_send",
+    "GiftCreatedEvent": "gift_clint_send",
 }
 
 GIFT_EVENT_NAMES = frozenset({"GiftCreatedEvent"})
@@ -57,15 +57,28 @@ TEMPLATE_PARAM_SPECS: dict[str, list[str]] = {
         "branch_name",        # {{5}} LOCATION
     ],
 
-    # gift – sent to RecipientCustomer (2 body vars — Hatif template gifft_send)
-    "gifft_send": [
-        "from_name",          # {{1}} giver name
-        "gift_coupon_code",   # {{2}} coupon or redemption token
+    # gift – sent to RecipientCustomer (5 body vars — Hatif template gift_clint_send)
+    "gift_clint_send": [
+        "recipient_name",     # {{1}} recipient name
+        "from_name",          # {{2}} sender name
+        "message",            # {{3}} gift message
+        "product_name",       # {{4}} product / gift name
+        "redemption_url",     # {{5}} redemption link
     ],
-    # legacy alias
-    "sent_gifft": [
+    # legacy aliases → same spec
+    "gifft_send": [
+        "recipient_name",
         "from_name",
-        "gift_coupon_code",
+        "message",
+        "product_name",
+        "redemption_url",
+    ],
+    "sent_gifft": [
+        "recipient_name",
+        "from_name",
+        "message",
+        "product_name",
+        "redemption_url",
     ],
 
 }
