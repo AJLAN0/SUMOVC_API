@@ -14,14 +14,18 @@ from app.services.hatif import format_provider_response, send_whatsapp_template,
 from app.services.rekaz import (
     build_template_parameters,
     build_text_message,
+    customer_notification_type,
     extract_fields,
     is_gift_event,
+    is_reservation_update_event,
     map_event_to_template,
     normalize_phone,
     rekaz_start_to_utc,
     resolve_correlation_id,
     resolve_message_phone,
     resolve_template_language,
+    staff_notification_type,
+    RESERVATION_CONFIRM_TEMPLATE,
 )
 from app.services.runtime_settings import get_allowed_late_minutes, get_reminder_before_minutes
 from app.services.role_recipients import get_phones_for_role
@@ -118,6 +122,7 @@ def _claim_notification_slot(
 async def _send_staff_notifications(
     fields: dict[str, str],
     event_name: str,
+    external_event_id: str | None,
     request_id: str,
     db: Session,
 ) -> None:
@@ -148,7 +153,7 @@ async def _send_staff_notifications(
         placeholder=settings.EMPTY_PARAM_PLACEHOLDER,
         db=db,
     )
-    notification_type = f"staff_confirmed:{staff_role}"
+    notification_type = staff_notification_type(event_name, staff_role, external_event_id)
 
     for staff_phone in staff_phones:
         if not _claim_notification_slot(reservation_number, notification_type, staff_phone, request_id, db):
@@ -520,18 +525,20 @@ async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
         else:
             # --- Template mode (spec-driven) ---
 
-            # ── Idempotency: one message per reservation / gift / order ──
-            if template_name == "reservation_confirmedddddddd" and phone:
-                if not _claim_notification_slot(reservation_number, "customer_confirmed", phone, request_id, db):
+            # ── Idempotency: one message per reservation / gift / order / update event ──
+            if template_name == RESERVATION_CONFIRM_TEMPLATE and phone:
+                notif_type = customer_notification_type(event_name, external_event_id)
+                if not _claim_notification_slot(reservation_number, notif_type, phone, request_id, db):
                     is_duplicate = True
                     logger.info(
-                        "customer_confirmed_already_sent",
+                        "customer_confirmation_already_sent",
                         extra={
                             "extra": {
                                 "request_id": request_id,
                                 "reservation_number": reservation_number,
                                 "phone": phone,
                                 "event_name": event_name,
+                                "notification_type": notif_type,
                             }
                         },
                     )
@@ -631,13 +638,15 @@ async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
             # ── Post-send actions (template mode only) ──
 
             if success and not is_duplicate:
-                await _send_staff_notifications(fields, event_name, request_id, db)
+                await _send_staff_notifications(fields, event_name, external_event_id, request_id, db)
 
-            if template_name == "reservation_confirmedddddddd" and success and not is_duplicate:
+            if template_name == RESERVATION_CONFIRM_TEMPLATE and success and not is_duplicate:
                 if phone:
+                    if is_reservation_update_event(event_name):
+                        _cancel_reminders(fields, request_id, db)
                     _schedule_reminder(fields, phone, external_event_id, request_id, db)
 
-            elif template_name == "reservation_confirmedddddddd" and not success and not is_duplicate:
+            elif template_name == RESERVATION_CONFIRM_TEMPLATE and not success and not is_duplicate:
                 logger.warning(
                     "rekaz_skipping_post_actions_send_failed",
                     extra={

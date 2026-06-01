@@ -12,12 +12,15 @@ _RIYADH = timezone(timedelta(hours=3))
 # ── Event → Template mapping ───────────────────────────────────────────
 EVENT_TEMPLATE_MAP = {
     "ReservationConfirmedEvent": "reservation_confirmedddddddd",
+    "ReservationUpdatedEvent": "reservation_confirmedddddddd",
     "ReservationCancelledEvent": "reservation_cancelled",
     "GiftCreatedEvent": "gift_clint_send",
 }
 
 GIFT_EVENT_NAMES = frozenset({"GiftCreatedEvent"})
 MERCHANDISE_EVENT_NAMES = frozenset({"MerchandiseOrderCreatedEvent"})
+RESERVATION_UPDATE_EVENT_NAMES = frozenset({"ReservationUpdatedEvent"})
+RESERVATION_CONFIRM_TEMPLATE = "reservation_confirmedddddddd"
 
 # ── Template → ordered BODY parameter names ────────────────────────────
 #
@@ -206,6 +209,31 @@ def is_gift_event(event_name: str | None) -> bool:
 
 def is_merchandise_event(event_name: str | None) -> bool:
     return bool(event_name and event_name in MERCHANDISE_EVENT_NAMES)
+
+
+def is_reservation_update_event(event_name: str | None) -> bool:
+    return bool(event_name and event_name in RESERVATION_UPDATE_EVENT_NAMES)
+
+
+def customer_notification_type(event_name: str | None, external_event_id: str | None) -> str:
+    """
+    Idempotency type for customer WhatsApp.
+    Confirm: once per reservation+phone. Update: once per update event+phone.
+    """
+    if is_reservation_update_event(event_name) and external_event_id:
+        return f"customer_updated:{external_event_id}"
+    return "customer_confirmed"
+
+
+def staff_notification_type(
+    event_name: str | None,
+    staff_role: str,
+    external_event_id: str | None,
+) -> str:
+    """Idempotency type for staff WhatsApp (per update event when reservation changes)."""
+    if is_reservation_update_event(event_name) and external_event_id:
+        return f"staff_updated:{staff_role}:{external_event_id}"
+    return f"staff_confirmed:{staff_role}"
 
 
 def _gift_payload(data: dict) -> bool:

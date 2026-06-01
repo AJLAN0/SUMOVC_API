@@ -48,6 +48,14 @@ DEFAULT_MAPPING_SEEDS: list[dict[str, Any]] = [
         "staff_template_name": "admin_reservation_confirmedddd",
     },
     {
+        "event_name": "ReservationUpdatedEvent",
+        "template_name": "reservation_confirmedddddddd",
+        "enabled": True,
+        "description": "Resend confirmation WhatsApp when reservation is updated",
+        "staff_role": "admin",
+        "staff_template_name": "admin_reservation_confirmedddd",
+    },
+    {
         "event_name": "GiftCreatedEvent",
         "template_name": "gift_clint_send",
         "enabled": True,
@@ -111,7 +119,7 @@ def get_staff_notification_for_event(db: Session, event_name: str | None) -> tup
         role = row.staff_role or "admin"
         return role, row.staff_template_name
 
-    if event_name in ("ReservationConfirmedEvent", "ReservationCreatedEvent"):
+    if event_name in ("ReservationConfirmedEvent", "ReservationCreatedEvent", "ReservationUpdatedEvent"):
         return "admin", "admin_reservation_confirmedddd"
     return None, None
 
