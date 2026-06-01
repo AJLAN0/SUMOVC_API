@@ -18,9 +18,12 @@ from app.services.rekaz import (
     classify_payload,
     customer_notification_type,
     extract_fields,
+    is_reservation_update_event,
+    load_previous_reservation_fields,
     map_event_to_template,
     normalize_phone,
     rekaz_start_to_utc,
+    reservation_schedule_changed,
     resolve_correlation_id,
     resolve_message_phone,
     resolve_template_language,
@@ -458,6 +461,27 @@ async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
         is_duplicate = False
         reservation_number = correlation_id or fields.get("reservation_number")
 
+        schedule_changed = True
+        if is_reservation_update_event(event_name):
+            previous_fields = load_previous_reservation_fields(
+                db, fields.get("reservation_number"), external_event_id
+            )
+            schedule_changed = reservation_schedule_changed(fields, previous_fields)
+            if not schedule_changed:
+                logger.info(
+                    "reservation_update_skipped_no_schedule_change",
+                    extra={
+                        "extra": {
+                            "request_id": request_id,
+                            "external_event_id": external_event_id,
+                            "reservation_number": fields.get("reservation_number"),
+                            "start_dt_iso": fields.get("start_dt_iso"),
+                            "end_dt_iso": fields.get("end_dt_iso"),
+                            "reservation_date": fields.get("reservation_date"),
+                        }
+                    },
+                )
+
         if not phone:
             logger.warning(
                 "rekaz_webhook_no_phone",
@@ -471,6 +495,10 @@ async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
                 },
             )
             provider_response = format_provider_response(False, "missing_phone")
+
+        elif is_reservation_update_event(event_name) and not schedule_changed:
+            status = "skipped"
+            provider_response = format_provider_response(True, "skipped:no_schedule_change")
 
         elif settings.HATIF_SEND_MODE == "text":
             text_body = build_text_message(
@@ -628,14 +656,14 @@ async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
 
             # ── Post-send actions (template mode only) ──
 
-            if success and not is_duplicate:
+            if success and not is_duplicate and schedule_changed:
                 await _send_staff_notifications(
                     fields, event_name, external_event_id, payload_kind, request_id, db
                 )
 
-            if should_schedule_reminder(template_name, payload_kind, event_name) and success and not is_duplicate:
+            if should_schedule_reminder(template_name, payload_kind, event_name) and success and not is_duplicate and schedule_changed:
                 if phone:
-                    if should_reschedule_reminder_on_update(event_name, payload_kind):
+                    if should_reschedule_reminder_on_update(event_name, payload_kind, schedule_changed):
                         _cancel_reminders(fields, request_id, db)
                     _schedule_reminder(fields, phone, external_event_id, request_id, db)
 

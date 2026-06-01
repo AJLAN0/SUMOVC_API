@@ -210,8 +210,16 @@ def should_cancel_reminders(template_name: str | None, kind: PayloadKind) -> boo
     return kind == PayloadKind.RESERVATION and template_name == RESERVATION_CANCEL_TEMPLATE
 
 
-def should_reschedule_reminder_on_update(event_name: str | None, kind: PayloadKind) -> bool:
-    return kind == PayloadKind.RESERVATION and event_name in RESERVATION_UPDATE_EVENTS
+def should_reschedule_reminder_on_update(
+    event_name: str | None,
+    kind: PayloadKind,
+    schedule_changed: bool = True,
+) -> bool:
+    return (
+        kind == PayloadKind.RESERVATION
+        and event_name in RESERVATION_UPDATE_EVENTS
+        and schedule_changed
+    )
 
 
 def is_gift_kind(kind: PayloadKind) -> bool:

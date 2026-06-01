@@ -33,6 +33,7 @@ STATUS_LABELS_AR: dict[str, str] = {
     "sent": "تم الإرسال",
     "canceled": "ملغى",
     "duplicate": "مكرر (تم التخطي)",
+    "skipped": "تم التخطي (لا تغيير بالموعد)",
     "received": "تم الاستلام",
     "locked": "مقفل",
 }

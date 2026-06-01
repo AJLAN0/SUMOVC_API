@@ -51,7 +51,7 @@ DEFAULT_MAPPING_SEEDS: list[dict[str, Any]] = [
         "event_name": "ReservationUpdatedEvent",
         "template_name": "reservation_confirmedddddddd",
         "enabled": True,
-        "description": "Resend confirmation WhatsApp when reservation is updated",
+        "description": "Send update template only when date/time changes (start/end/reservation_date)",
         "staff_role": "admin",
         "staff_template_name": "admin_reservation_confirmedddd",
     },

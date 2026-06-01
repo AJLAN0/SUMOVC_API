@@ -47,6 +47,9 @@ __all__ = [
     "is_merchandise_event",
     "is_reservation_kind",
     "is_reservation_update_event",
+    "load_previous_reservation_fields",
+    "reservation_schedule_changed",
+    "RESERVATION_SCHEDULE_FIELD_KEYS",
     "map_event_to_template",
     "resolve_correlation_id",
     "resolve_message_phone",
@@ -261,6 +264,62 @@ def is_reservation_update_event(event_name: str | None) -> bool:
     from app.services.rekaz_payloads import RESERVATION_UPDATE_EVENTS
 
     return bool(event_name and event_name in RESERVATION_UPDATE_EVENTS)
+
+
+RESERVATION_SCHEDULE_FIELD_KEYS = ("start_dt_iso", "end_dt_iso", "reservation_date")
+
+
+def load_previous_reservation_fields(
+    db: Session,
+    reservation_number: str | None,
+    exclude_external_event_id: str | None,
+) -> dict[str, str] | None:
+    """Most recent reservation webhook for the same booking, excluding the current event."""
+    import json
+
+    from sqlalchemy import select
+
+    from app.models import WebhookEvent
+
+    if not reservation_number:
+        return None
+
+    rows = db.execute(
+        select(WebhookEvent)
+        .where(
+            WebhookEvent.event_name.like("Reservation%"),
+            WebhookEvent.payload_json.contains(reservation_number),
+        )
+        .order_by(WebhookEvent.created_at.desc())
+        .limit(30)
+    ).scalars().all()
+
+    for row in rows:
+        if exclude_external_event_id and row.external_event_id == exclude_external_event_id:
+            continue
+        try:
+            payload = json.loads(row.payload_json)
+        except json.JSONDecodeError:
+            continue
+        prev = extract_fields(payload, row.event_name)
+        if prev.get("reservation_number") == reservation_number:
+            return prev
+    return None
+
+
+def reservation_schedule_changed(
+    current_fields: dict[str, str],
+    previous_fields: dict[str, str] | None,
+) -> bool:
+    """True when start/end datetime or reservation date differs from the previous webhook."""
+    if not previous_fields:
+        return False
+    for key in RESERVATION_SCHEDULE_FIELD_KEYS:
+        cur = (current_fields.get(key) or "").strip()
+        prev = (previous_fields.get(key) or "").strip()
+        if cur != prev:
+            return True
+    return False
 
 
 def resolve_correlation_id(fields: dict[str, str], event_name: str | None = None) -> str | None:

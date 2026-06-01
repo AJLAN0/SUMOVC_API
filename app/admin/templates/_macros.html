@@ -6,6 +6,8 @@
   {%- elif s == 'pending' -%}قيد الانتظار
   {%- elif s == 'sent' -%}تم الإرسال
   {%- elif s == 'canceled' -%}ملغى
+  {%- elif s == 'skipped' -%}تم التخطي
+  {%- elif s == 'duplicate' -%}مكرر
   {%- else -%}{{ s }}
   {%- endif -%}
 {%- endmacro %}
