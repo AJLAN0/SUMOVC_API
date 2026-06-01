@@ -73,9 +73,21 @@ DEFAULT_MAPPING_SEEDS: list[dict[str, Any]] = [
     },
 ]
 
+# Additional Rekaz events — disabled until templates are configured in dashboard
+_EXTRA_EVENT_SEEDS: list[dict[str, Any]] = [
+    *[{"event_name": n, "template_name": "", "enabled": False, "description": f"Configure in dashboard — {n}", "staff_role": "admin", "staff_template_name": None} for n in (
+        "ReservationDoneEvent",
+        "GiftActivatedEvent", "GiftRedeemedEvent", "GiftCancelledEvent",
+        "MerchandiseOrderCompletedEvent", "MerchandiseOrderCanceledEvent",
+        "SubscriptionCreatedEvent", "SubscriptionActivatedEvent", "SubscriptionCancelledEvent",
+        "SubscriptionExpiredEvent", "SubscriptionPausedEvent", "SubscriptionResumedEvent",
+        "SubscriptionTransferredEvent", "SubscriptionPauseScheduledEvent", "SubscriptionUpdatedEvent",
+    )],
+]
+
 
 def seed_event_mappings(db: Session) -> None:
-    for seed in DEFAULT_MAPPING_SEEDS:
+    for seed in [*DEFAULT_MAPPING_SEEDS, *_EXTRA_EVENT_SEEDS]:
         existing = db.execute(
             select(EventTemplateMapping).where(EventTemplateMapping.event_name == seed["event_name"])
         ).scalar_one_or_none()

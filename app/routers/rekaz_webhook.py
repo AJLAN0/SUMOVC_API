@@ -12,12 +12,12 @@ from app.database import SessionLocal
 from app.models import MessageLog, ScheduledMessage, SentNotification, WebhookEvent
 from app.services.hatif import format_provider_response, send_whatsapp_template, send_whatsapp_text
 from app.services.rekaz import (
+    PayloadKind,
     build_template_parameters,
     build_text_message,
+    classify_payload,
     customer_notification_type,
     extract_fields,
-    is_gift_event,
-    is_reservation_update_event,
     map_event_to_template,
     normalize_phone,
     rekaz_start_to_utc,
@@ -25,6 +25,9 @@ from app.services.rekaz import (
     resolve_message_phone,
     resolve_template_language,
     staff_notification_type,
+    should_cancel_reminders,
+    should_reschedule_reminder_on_update,
+    should_schedule_reminder,
     RESERVATION_CONFIRM_TEMPLATE,
 )
 from app.services.runtime_settings import get_allowed_late_minutes, get_reminder_before_minutes
@@ -123,6 +126,7 @@ async def _send_staff_notifications(
     fields: dict[str, str],
     event_name: str,
     external_event_id: str | None,
+    payload_kind: PayloadKind,
     request_id: str,
     db: Session,
 ) -> None:
@@ -153,7 +157,7 @@ async def _send_staff_notifications(
         placeholder=settings.EMPTY_PARAM_PLACEHOLDER,
         db=db,
     )
-    notification_type = staff_notification_type(event_name, staff_role, external_event_id)
+    notification_type = staff_notification_type(event_name, staff_role, external_event_id, payload_kind)
 
     for staff_phone in staff_phones:
         if not _claim_notification_slot(reservation_number, notification_type, staff_phone, request_id, db):
@@ -378,6 +382,7 @@ async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
 
         phone_raw, phone_source = resolve_message_phone(payload, event_name)
         phone = normalize_phone(phone_raw)
+        payload_kind = classify_payload(event_name, payload)
         correlation_id = resolve_correlation_id(fields, event_name)
 
         logger.info(
@@ -387,6 +392,7 @@ async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
                     "request_id": request_id,
                     "external_event_id": external_event_id,
                     "event_name": event_name,
+                    "payload_kind": payload_kind.value,
                     "phone_raw": phone_raw,
                     "phone_source": phone_source,
                     "phone_normalized": phone,
@@ -525,37 +531,22 @@ async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
         else:
             # --- Template mode (spec-driven) ---
 
-            # ── Idempotency: one message per reservation / gift / order / update event ──
-            if template_name == RESERVATION_CONFIRM_TEMPLATE and phone:
-                notif_type = customer_notification_type(event_name, external_event_id)
-                if not _claim_notification_slot(reservation_number, notif_type, phone, request_id, db):
+            # ── Idempotency: per-domain rules (confirm once, updates/events by webhook Id) ──
+            idempotency_key = correlation_id or external_event_id
+            if phone and idempotency_key:
+                notif_type = customer_notification_type(event_name, external_event_id, payload_kind)
+                if not _claim_notification_slot(idempotency_key, notif_type, phone, request_id, db):
                     is_duplicate = True
                     logger.info(
-                        "customer_confirmation_already_sent",
+                        "customer_message_already_sent",
                         extra={
                             "extra": {
                                 "request_id": request_id,
-                                "reservation_number": reservation_number,
+                                "idempotency_key": idempotency_key,
                                 "phone": phone,
                                 "event_name": event_name,
+                                "payload_kind": payload_kind.value,
                                 "notification_type": notif_type,
-                            }
-                        },
-                    )
-                    provider_response = format_provider_response(False, "duplicate_suppressed")
-                    status = "duplicate"
-
-            elif is_gift_event(event_name) and phone and reservation_number:
-                if not _claim_notification_slot(reservation_number, "gift_sent", phone, request_id, db):
-                    is_duplicate = True
-                    logger.info(
-                        "gift_already_sent",
-                        extra={
-                            "extra": {
-                                "request_id": request_id,
-                                "gift_id": reservation_number,
-                                "phone": phone,
-                                "event_name": event_name,
                             }
                         },
                     )
@@ -638,15 +629,17 @@ async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
             # ── Post-send actions (template mode only) ──
 
             if success and not is_duplicate:
-                await _send_staff_notifications(fields, event_name, external_event_id, request_id, db)
+                await _send_staff_notifications(
+                    fields, event_name, external_event_id, payload_kind, request_id, db
+                )
 
-            if template_name == RESERVATION_CONFIRM_TEMPLATE and success and not is_duplicate:
+            if should_schedule_reminder(template_name, payload_kind, event_name) and success and not is_duplicate:
                 if phone:
-                    if is_reservation_update_event(event_name):
+                    if should_reschedule_reminder_on_update(event_name, payload_kind):
                         _cancel_reminders(fields, request_id, db)
                     _schedule_reminder(fields, phone, external_event_id, request_id, db)
 
-            elif template_name == RESERVATION_CONFIRM_TEMPLATE and not success and not is_duplicate:
+            elif should_schedule_reminder(template_name, payload_kind, event_name) and not success and not is_duplicate:
                 logger.warning(
                     "rekaz_skipping_post_actions_send_failed",
                     extra={
@@ -658,7 +651,7 @@ async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
                     },
                 )
 
-            elif template_name == "reservation_cancelled":
+            elif should_cancel_reminders(template_name, payload_kind):
                 _cancel_reminders(fields, request_id, db)
 
         # --- Save MessageLog (client) ---

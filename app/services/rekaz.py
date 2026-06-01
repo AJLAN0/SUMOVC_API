@@ -4,6 +4,23 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
+from app.services.rekaz_payloads import (
+    PayloadKind,
+    RESERVATION_CONFIRM_TEMPLATE,
+    classify_payload,
+    customer_notification_type,
+    entity_id_from_data,
+    get_payload_data,
+    is_gift_kind,
+    is_reservation_kind,
+    resolve_correlation_id as resolve_correlation_id_for_kind,
+    resolve_message_phone,
+    staff_notification_type,
+    should_cancel_reminders,
+    should_reschedule_reminder_on_update,
+    should_schedule_reminder,
+)
+
 logger = logging.getLogger("app.rekaz")
 
 # Rekaz reservation times are Saudi local; API often tags them as +00:00 or Z (not true UTC).
@@ -17,10 +34,27 @@ EVENT_TEMPLATE_MAP = {
     "GiftCreatedEvent": "gift_clint_send",
 }
 
-GIFT_EVENT_NAMES = frozenset({"GiftCreatedEvent"})
-MERCHANDISE_EVENT_NAMES = frozenset({"MerchandiseOrderCreatedEvent"})
-RESERVATION_UPDATE_EVENT_NAMES = frozenset({"ReservationUpdatedEvent"})
-RESERVATION_CONFIRM_TEMPLATE = "reservation_confirmedddddddd"
+# Re-export payload helpers (webhook + tests)
+__all__ = [
+    "PayloadKind",
+    "RESERVATION_CONFIRM_TEMPLATE",
+    "classify_payload",
+    "customer_notification_type",
+    "extract_fields",
+    "is_gift_event",
+    "is_gift_kind",
+    "is_merchandise_event",
+    "is_reservation_kind",
+    "is_reservation_update_event",
+    "map_event_to_template",
+    "resolve_correlation_id",
+    "resolve_message_phone",
+    "resolve_template_language",
+    "should_cancel_reminders",
+    "should_reschedule_reminder_on_update",
+    "should_schedule_reminder",
+    "staff_notification_type",
+]
 
 # ── Template → ordered BODY parameter names ────────────────────────────
 #
@@ -204,65 +238,26 @@ def _ci(d: dict, *keys: str):
 
 
 def is_gift_event(event_name: str | None) -> bool:
-    return bool(event_name and event_name in GIFT_EVENT_NAMES)
+    return classify_payload(event_name) == PayloadKind.GIFT
 
 
 def is_merchandise_event(event_name: str | None) -> bool:
-    return bool(event_name and event_name in MERCHANDISE_EVENT_NAMES)
+    return classify_payload(event_name) == PayloadKind.MERCHANDISE
 
 
 def is_reservation_update_event(event_name: str | None) -> bool:
-    return bool(event_name and event_name in RESERVATION_UPDATE_EVENT_NAMES)
+    from app.services.rekaz_payloads import RESERVATION_UPDATE_EVENTS
+
+    return bool(event_name and event_name in RESERVATION_UPDATE_EVENTS)
 
 
-def customer_notification_type(event_name: str | None, external_event_id: str | None) -> str:
-    """
-    Idempotency type for customer WhatsApp.
-    Confirm: once per reservation+phone. Update: once per update event+phone.
-    """
-    if is_reservation_update_event(event_name) and external_event_id:
-        return f"customer_updated:{external_event_id}"
-    return "customer_confirmed"
-
-
-def staff_notification_type(
-    event_name: str | None,
-    staff_role: str,
-    external_event_id: str | None,
-) -> str:
-    """Idempotency type for staff WhatsApp (per update event when reservation changes)."""
-    if is_reservation_update_event(event_name) and external_event_id:
-        return f"staff_updated:{staff_role}:{external_event_id}"
-    return f"staff_confirmed:{staff_role}"
-
-
-def _gift_payload(data: dict) -> bool:
-    """Detect gift-shaped payloads even if EventName is missing."""
-    return bool(_ci(data, "RecipientCustomer", "recipientCustomer") or _ci(data, "RedemptionUrl", "redemptionUrl"))
-
-
-def resolve_message_phone(payload: dict, event_name: str | None) -> tuple[str | None, str]:
-    """
-    Resolve the WhatsApp recipient phone from a Rekaz payload.
-
-    Gifts → RecipientCustomer (the person who receives the gift card).
-    Merchandise / reservations → Customer.
-    """
-    data = payload.get("Data") or payload.get("data") or {}
-
-    if is_gift_event(event_name) or _gift_payload(data):
-        recipient = data.get("RecipientCustomer") or data.get("recipientCustomer") or {}
-        phone_raw = _ci(recipient, "MobileNumber", "mobileNumber", "phone")
-        return phone_raw, "recipient_customer"
-
-    if is_merchandise_event(event_name):
-        customer = data.get("Customer") or data.get("customer") or {}
-        phone_raw = _ci(customer, "MobileNumber", "mobileNumber", "phone")
-        return phone_raw, "customer"
-
-    customer = data.get("customer") or data.get("Customer") or {}
-    phone_raw = _ci(customer, "MobileNumber", "mobileNumber", "phone")
-    return phone_raw, "customer"
+def resolve_correlation_id(fields: dict[str, str], event_name: str | None = None) -> str | None:
+    kind_str = fields.get("payload_kind")
+    try:
+        kind = PayloadKind(kind_str) if kind_str else classify_payload(event_name)
+    except ValueError:
+        kind = classify_payload(event_name)
+    return resolve_correlation_id_for_kind(fields, kind)
 
 
 def _gift_redemption_code(data: dict) -> str:
@@ -287,21 +282,33 @@ def _gift_from_name(data: dict, buyer: dict) -> str:
     show_buyer = _ci(data, "showBuyerInfo", "ShowBuyerInfo")
     if show_buyer in (True, "true", "True", 1, "1"):
         return str(buyer_name).strip()
-    # Admin / hidden buyer gifts still need a non-empty Hatif param
     return str(buyer_name).strip() if buyer_name else "-"
 
 
-def resolve_correlation_id(fields: dict[str, str], event_name: str | None) -> str | None:
-    """Idempotency key source: gift id, order code, or reservation number."""
-    if is_gift_event(event_name):
-        return fields.get("gift_id") or fields.get("reservation_number") or None
-    if is_merchandise_event(event_name):
-        return fields.get("order_code") or fields.get("reservation_number") or None
-    return fields.get("reservation_number") or None
+def _merchandise_items_summary(data: dict) -> str:
+    items = _ci(data, "items", "Items") or []
+    if not isinstance(items, list) or not items:
+        return ""
+    names: list[str] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        label = (
+            _ci(item, "ProductName", "productName")
+            or _ci(item, "Name", "name")
+            or _ci(item, "PriceName", "priceName")
+            or ""
+        )
+        qty = _ci(item, "Quantity", "quantity")
+        if label and qty:
+            names.append(f"{label} x{qty}")
+        elif label:
+            names.append(str(label))
+    return "، ".join(names)
 
 
 def resolve_template_language(payload: dict, event_name: str | None, default: str) -> str:
-    data = payload.get("Data") or payload.get("data") or {}
+    data = get_payload_data(payload)
     lang = _ci(data, "Language", "language")
     if lang and str(lang).strip():
         return str(lang).strip().lower()[:2]
@@ -320,18 +327,23 @@ def extract_fields(payload: dict, event_name: str | None = None) -> dict[str, st
     for internal use (e.g. scheduling reminders).
     """
     event_name = event_name or payload.get("EventName") or payload.get("eventName") or ""
-    data = payload.get("Data") or payload.get("data") or {}
+    data = get_payload_data(payload)
+    kind = classify_payload(event_name, payload)
 
     buyer = data.get("BuyerCustomer") or data.get("buyerCustomer") or {}
     recipient = data.get("RecipientCustomer") or data.get("recipientCustomer") or {}
-    customer = data.get("customer") or data.get("Customer") or {}
+    customer = data.get("Customer") or data.get("customer") or {}
 
-    if is_gift_event(event_name) or _gift_payload(data):
-        customer = recipient
-    elif is_merchandise_event(event_name):
+    if kind == PayloadKind.GIFT:
+        customer = recipient or customer
+    elif kind == PayloadKind.SUBSCRIPTION:
         customer = data.get("Customer") or data.get("customer") or customer
 
-    # ── Raw datetime strings ──
+    formatted_from_date = _ci(data, "formattedFromDate", "FormattedFromDate")
+    formatted_from_time = _ci(data, "formattedFromTime", "FormattedFromTime")
+    formatted_end_date = _ci(data, "formattedEndDate", "FormattedEndDate")
+    formatted_end_time = _ci(data, "formattedEndTime", "FormattedEndTime")
+
     start_raw = _ci(
         data,
         "startDate",
@@ -346,39 +358,62 @@ def extract_fields(payload: dict, event_name: str | None = None) -> dict[str, st
     start_dt = _parse_dt(start_raw)
     end_dt = _parse_dt(end_raw)
 
+    entity_id = entity_id_from_data(data, kind)
     recipient_name = _ci(recipient, "name", "Name") or _ci(data, "toName", "ToName") or ""
     buyer_name = _ci(buyer, "name", "Name") or _ci(data, "fromName", "FromName") or ""
-    gift_id = str(_ci(data, "id", "Id") or "")
+
+    product_name = (
+        _ci(data, "productName", "ProductName")
+        or _ci(data, "Name", "name")
+        or _merchandise_items_summary(data)
+        or ""
+    )
+
+    reservation_number = str(
+        _ci(data, "number", "Number", "reservationNumber", "ReservationNumber") or entity_id or ""
+    )
+    order_code = str(_ci(data, "code", "Code") or "")
+    subscription_number = str(_ci(data, "number", "Number") or "")
+    subscription_code = str(_ci(data, "code", "Code") or "")
+
+    if kind == PayloadKind.GIFT and not reservation_number:
+        reservation_number = entity_id
+    if kind == PayloadKind.MERCHANDISE and not reservation_number:
+        reservation_number = order_code or entity_id
+    if kind == PayloadKind.SUBSCRIPTION and not reservation_number:
+        reservation_number = subscription_number or subscription_code or entity_id
 
     fields: dict[str, str] = {
         "customer_name":              _ci(customer, "name", "Name") or recipient_name or "",
         "recipient_name":             recipient_name,
         "buyer_name":                 buyer_name,
         "to_name":                    _ci(data, "toName", "ToName") or recipient_name or "",
-        "from_name":                  _gift_from_name(data, buyer),
+        "from_name":                  _gift_from_name(data, buyer) if kind == PayloadKind.GIFT else (_ci(data, "fromName", "FromName") or buyer_name or ""),
         "message":                    _ci(data, "message", "Message") or "",
-        "gift_id":                    gift_id,
-        "reservation_number":         str(
-            _ci(data, "number", "Number", "reservationNumber", "ReservationNumber", "code", "Code") or gift_id or ""
-        ),
-        "order_code":                 str(_ci(data, "code", "Code") or ""),
-        "product_name":               _ci(data, "productName", "ProductName") or "",
-        "price_name":                 _ci(data, "priceName", "PriceName") or "",
-        "total_price":                str(_ci(data, "totalPrice", "TotalPrice") or ""),
+        "entity_id":                  entity_id,
+        "gift_id":                    entity_id if kind == PayloadKind.GIFT else "",
+        "reservation_number":         reservation_number,
+        "order_code":                 order_code,
+        "subscription_number":        subscription_number,
+        "subscription_code":          subscription_code,
+        "product_name":               product_name,
+        "price_name":                 _ci(data, "priceName", "PriceName", "OptionName", "optionName") or "",
+        "total_price":                str(_ci(data, "totalPrice", "TotalPrice", "price", "Price") or ""),
+        "discount":                   str(_ci(data, "discount", "Discount") or ""),
+        "status":                     str(_ci(data, "status", "Status") or ""),
         "redemption_url":             _ci(data, "redemptionUrl", "RedemptionUrl") or "",
         "gift_coupon_code":           _gift_redemption_code(data),
         "gift_theme_name":            _ci(data, "giftThemeName", "GiftThemeName") or "",
+        "items_summary":              _merchandise_items_summary(data),
 
-        # Formatted date / time (for template params)
-        "reservation_date":           _fmt_date(start_dt),
-        "start_time":                 _fmt_time(start_dt),
-        "end_time":                   _fmt_time(end_dt),
+        "reservation_date":           formatted_from_date or _fmt_date(start_dt),
+        "start_time":                 formatted_from_time or _fmt_time(start_dt),
+        "end_time":                   formatted_end_time or _fmt_time(end_dt),
+        "end_date":                   formatted_end_date or _fmt_date(end_dt),
 
-        # Raw ISO strings (for internal scheduling)
         "start_dt_iso":               _fmt_iso(start_raw),
         "end_dt_iso":                 _fmt_iso(end_raw),
 
-        # Invoice — many possible key names from Rekaz
         "invoice_link":               _ci(data, "invoiceUrl", "InvoiceUrl", "invoiceLink", "InvoiceLink", "invoice", "Invoice") or "",
 
         "header_image_url":           _ci(
@@ -394,17 +429,19 @@ def extract_fields(payload: dict, event_name: str | None = None) -> dict[str, st
         ) or "",
 
         "cancel_reason":              _ci(data, "cancelReason", "CancelReason", "cancellationReason", "CancellationReason") or "",
-        # Rekaz actually sends BranchNameAr / BranchNameEn (not BranchName as their docs claim).
-        # Prefer Arabic since our customer-facing template is Arabic.
         "branch_name":                _ci(data, "branchNameAr", "BranchNameAr",
                                                 "branchNameEn", "BranchNameEn",
                                                 "branchName",   "BranchName") or "",
 
         "reservation_after_minutes":  str(_ci(data, "reservationAfterMinutes", "ReservationAfterMinutes", "afterMinutes", "AfterMinutes") or ""),
         "allowed_late_minutes":       str(_ci(data, "allowedLateMinutes", "AllowedLateMinutes") or ""),
+        "payload_kind":               kind.value,
     }
 
-    logger.debug("extract_fields_result", extra={"extra": {"event_name": event_name, "fields": fields}})
+    logger.debug(
+        "extract_fields_result",
+        extra={"extra": {"event_name": event_name, "payload_kind": kind.value, "fields": fields}},
+    )
     return fields
 
 

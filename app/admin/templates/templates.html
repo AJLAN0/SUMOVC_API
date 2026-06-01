@@ -42,14 +42,21 @@
   </div>
 
   <div class="card">
-    <div class="card-header"><h3>المتغيرات الشائعة</h3></div>
+    <div class="card-header"><h3>المتغيرات حسب نوع الحمولة</h3></div>
     <div class="card-body" style="font-size: 0.85rem; color: var(--text-muted);">
-      <p style="margin: 0 0 0.75rem;">عند جدولة تذكير أو إرسال من ركاز، تُملأ هذه الحقول تلقائياً من بيانات الحجز:</p>
-      <ul style="margin: 0; padding-right: 1.25rem; line-height: 1.8;">
-        {% for key, label in param_labels.items() %}
-        <li><span class="ltr font-mono" dir="ltr">{{ key }}</span> — {{ label }}</li>
-        {% endfor %}
-      </ul>
+      <p style="margin: 0 0 1rem;">اختر المتغيرات المناسبة لنوع الحدث — تُملأ تلقائياً من حمولة ركاز:</p>
+      {% for kind in kind_order %}
+      {% if kind.value != 'unknown' %}
+      <div style="margin-bottom: 1rem;">
+        <strong style="color: var(--text);">{{ kind_labels[kind] }}</strong>
+        <ul style="margin: 0.35rem 0 0; padding-right: 1.25rem; line-height: 1.7;">
+          {% for key in fields_by_kind[kind] %}
+          <li><span class="ltr font-mono" dir="ltr">{{ key }}</span>{% if param_labels.get(key) %} — {{ param_labels[key] }}{% endif %}</li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+      {% endfor %}
     </div>
   </div>
 </div>

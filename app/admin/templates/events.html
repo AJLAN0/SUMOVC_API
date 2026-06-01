@@ -2,7 +2,7 @@
 {% from "_macros.html" import page_header, empty_row %}
 {% block title %}أحداث ركاز — SUMO{% endblock %}
 {% block content %}
-{{ page_header('أحداث ركاز', 'كل الإشعارات الواردة من نظام ركاز — أسماء الأحداث تبقى كما يرسلها ركاز') }}
+{{ page_header('أحداث ركاز', 'كل الإشعارات الواردة — النوع يُستنتج من اسم الحدث (حجز · هدية · منتجات · اشتراك)') }}
 
 <form method="get" class="filter-bar">
   <div class="form-group" style="margin: 0; min-width: 180px;">
@@ -28,16 +28,19 @@
       <thead>
         <tr>
           <th>الوقت</th>
-          <th>نوع الحدث</th>
+          <th>النوع</th>
+          <th>حدث ركاز</th>
           <th>المعرّف</th>
           <th>الجوال</th>
           <th>إجراء</th>
         </tr>
       </thead>
       <tbody id="events-body">
-        {% for ev in items %}
+        {% for row in event_rows %}
+        {% set ev = row.event %}
         <tr id="row-{{ ev.id }}">
           <td class="ltr" style="color: var(--text-muted);">{{ ev.created_at.strftime('%Y-%m-%d %H:%M') if ev.created_at else '—' }}</td>
+          <td><span class="badge badge-muted">{{ row.kind_label }}</span></td>
           <td><a href="/dashboard/events/{{ ev.id }}" class="btn-link ltr font-mono">{{ ev.event_name }}</a></td>
           <td class="ltr font-mono" style="font-size: 0.8rem;">{{ ev.external_event_id or '—' }}</td>
           <td class="ltr">{{ ev.phone or '—' }}</td>
@@ -47,7 +50,7 @@
           </td>
         </tr>
         {% else %}
-        {{ empty_row(5) }}
+        {{ empty_row(6) }}
         {% endfor %}
       </tbody>
     </table>

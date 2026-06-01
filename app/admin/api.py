@@ -14,6 +14,7 @@ from app.admin.services import (
     probe_database,
     probe_hatif_token,
 )
+from app.admin.rekaz_ui import kind_label, payload_kind_for_event
 from app.database import get_db
 from app.models import (
     EventTemplateMapping,
@@ -606,6 +607,8 @@ def api_list_mappings(
                 "description": i.description,
                 "staff_role": i.staff_role,
                 "staff_template_name": i.staff_template_name,
+                "payload_kind": payload_kind_for_event(i.event_name).value,
+                "kind_label": kind_label(payload_kind_for_event(i.event_name)),
                 "updated_at": i.updated_at.isoformat() if i.updated_at else None,
             }
             for i in items

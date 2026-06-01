@@ -2,7 +2,15 @@
 {% from "_macros.html" import page_header, empty_row %}
 {% block title %}ربط الأحداث — SUMO{% endblock %}
 {% block content %}
-{{ page_header('ربط الأحداث بالقوالب', 'حدد قالب العميل، دور الموظفين، وقالب الإشعار لكل حدث من ركاز') }}
+{{ page_header('ربط الأحداث بالقوالب', 'كل نوع حمولة (حجز · هدية · منتجات · اشتراك) له حقول ورقم جوال مختلف — اربط كل حدث بالقالب المناسب') }}
+
+<div class="filter-bar" style="margin-bottom: 1.25rem;">
+  <span style="color: var(--text-muted); font-size: 0.9rem; align-self: center;">تصفية حسب النوع:</span>
+  {% for f in kind_filters %}
+  <a href="/dashboard/mappings?kind={{ f.value }}"
+    class="btn btn-sm {% if kind_filter == f.value %}btn-primary{% else %}btn-ghost{% endif %}">{{ f.label }}</a>
+  {% endfor %}
+</div>
 
 <div class="split-layout">
   <div class="card">
@@ -11,7 +19,18 @@
       <form method="post" action="/dashboard/mappings/create">
         <div class="form-group">
           <label class="form-label">حدث ركاز</label>
-          <input name="event_name" required placeholder="ReservationCreatedEvent" class="form-input ltr font-mono" dir="ltr" />
+          <input name="event_name" required list="rekaz-events" placeholder="ReservationCreatedEvent"
+            class="form-input ltr font-mono" dir="ltr" />
+          <datalist id="rekaz-events">
+            {% for group in event_groups %}
+            {% for ev in group.events %}
+            <option value="{{ ev }}">{{ group.kind_label }} — {{ ev }}</option>
+            {% endfor %}
+            {% endfor %}
+          </datalist>
+          <p style="font-size: 0.8rem; color: var(--text-dim); margin-top: 0.35rem;">
+            أو اكتب اسم حدث جديد كما يرسله ركاز
+          </p>
         </div>
         <div class="form-group">
           <label class="form-label">قالب العميل (هاتف)</label>
@@ -21,7 +40,7 @@
             {% endfor %}
           </select>
           <p style="font-size: 0.8rem; color: var(--text-dim); margin-top: 0.35rem;">
-            <a href="/dashboard/templates">إدارة القوالب</a>
+            <a href="/dashboard/templates">إدارة القوالب والمتغيرات</a>
           </p>
         </div>
         <div class="form-group">
@@ -38,7 +57,7 @@
         <div class="form-group">
           <label class="form-label">قالب الموظفين (اختياري)</label>
           <select name="staff_template_name" class="form-select">
-            <option value="">— اختر قالباً —</option>
+            <option value="">— بدون إشعار موظفين —</option>
             {% for t in template_list %}
             <option value="{{ t.name }}">{{ t.title_ar }} ({{ t.name }})</option>
             {% endfor %}
@@ -58,50 +77,71 @@
   </div>
 
   <div class="card">
-    <div class="card-header"><h3>الروابط الحالية</h3></div>
-    <div class="table-wrap">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>حدث ركاز</th>
-            <th>قالب العميل</th>
-            <th>دور الموظفين</th>
-            <th>قالب الموظفين</th>
-            <th>مفعّل</th>
-            <th>إجراء</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for m in items %}
-          <tr id="row-{{ m.id }}">
-            <td class="ltr font-mono" style="font-size: 0.8rem;">{{ m.event_name }}</td>
-            <td class="ltr font-mono" style="font-size: 0.8rem;">{{ m.template_name or '—' }}</td>
-            <td style="font-size: 0.85rem;">
-              {{ roles.get(m.staff_role or 'admin', {}).get('label_ar', m.staff_role or 'admin') }}
-            </td>
-            <td class="ltr font-mono" style="font-size: 0.8rem;">{{ m.staff_template_name or '—' }}</td>
-            <td>
-              <form method="post" action="/dashboard/mappings/{{ m.id }}/toggle" style="display: inline;">
-                <button type="submit" class="btn btn-sm {% if m.enabled %}badge-success{% else %}badge-muted{% endif %}" style="border: none; cursor: pointer;">
-                  {{ 'نعم' if m.enabled else 'لا' }}
-                </button>
-              </form>
-            </td>
-            <td>
-              <button hx-delete="/admin/api/mappings/{{ m.id }}" hx-target="#row-{{ m.id }}" hx-swap="outerHTML"
-                hx-confirm="حذف هذا الربط؟" class="btn btn-danger btn-sm">حذف</button>
-            </td>
-          </tr>
-          {% else %}
-          {{ empty_row(6, 'لا توجد روابط — سيتم استخدام الافتراضي من النظام') }}
+    <div class="card-header"><h3>مرجع أنواع الحمولة</h3></div>
+    <div class="card-body" style="font-size: 0.85rem; color: var(--text-muted);">
+      {% for group in event_groups %}
+      <div style="margin-bottom: 1rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--border);">
+        <strong style="color: var(--text);">{{ group.kind_label }}</strong>
+        <p style="margin: 0.35rem 0 0.5rem; font-size: 0.8rem; color: var(--text-dim);">{{ group.phone_hint }}</p>
+        <p style="margin: 0; line-height: 1.6;">
+          {% for ev in group.events[:4] %}
+          <span class="ltr font-mono" dir="ltr" style="font-size: 0.75rem;">{{ ev }}</span>{% if not loop.last %} · {% endif %}
           {% endfor %}
-        </tbody>
-      </table>
+          {% if group.events|length > 4 %}
+          <span style="color: var(--text-dim);">+{{ group.events|length - 4 }} أخرى</span>
+          {% endif %}
+        </p>
+      </div>
+      {% endfor %}
     </div>
   </div>
 </div>
 
-<p style="color: var(--text-dim); font-size: 0.85rem; margin-top: 1.5rem;">
-  الأدوار: مشرف · فني منتجات · فني بورتريه — اربط كل حدث بالدور المسؤول عنه.
-</p>
+<div class="card" style="margin-top: 1.5rem;">
+  <div class="card-header"><h3>الروابط الحالية {% if kind_filter != 'all' %}({{ kind_filter_label }}){% endif %}</h3></div>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>النوع</th>
+          <th>حدث ركاز</th>
+          <th>قالب العميل</th>
+          <th>دور الموظفين</th>
+          <th>قالب الموظفين</th>
+          <th>مفعّل</th>
+          <th>إجراء</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in mapping_rows %}
+        {% set m = row.mapping %}
+        <tr id="row-{{ m.id }}">
+          <td>
+            <span class="badge badge-muted" title="{{ row.phone_hint }}">{{ row.kind_label }}</span>
+          </td>
+          <td class="ltr font-mono" style="font-size: 0.8rem;">{{ m.event_name }}</td>
+          <td class="ltr font-mono" style="font-size: 0.8rem;">{{ m.template_name or '—' }}</td>
+          <td style="font-size: 0.85rem;">
+            {{ roles.get(m.staff_role or 'admin', {}).get('label_ar', m.staff_role or 'admin') }}
+          </td>
+          <td class="ltr font-mono" style="font-size: 0.8rem;">{{ m.staff_template_name or '—' }}</td>
+          <td>
+            <form method="post" action="/dashboard/mappings/{{ m.id }}/toggle" style="display: inline;">
+              <button type="submit" class="btn btn-sm {% if m.enabled %}badge-success{% else %}badge-muted{% endif %}" style="border: none; cursor: pointer;">
+                {{ 'نعم' if m.enabled else 'لا' }}
+              </button>
+            </form>
+          </td>
+          <td>
+            <button hx-delete="/admin/api/mappings/{{ m.id }}" hx-target="#row-{{ m.id }}" hx-swap="outerHTML"
+              hx-confirm="حذف هذا الربط؟" class="btn btn-danger btn-sm">حذف</button>
+          </td>
+        </tr>
+        {% else %}
+        {{ empty_row(7, 'لا توجد روابط لهذا النوع') }}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
 {% endblock %}

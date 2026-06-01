@@ -19,7 +19,18 @@ from app.admin.auth import (
 from app.admin.deps import render_admin
 from app.admin.errors import explain_error, validate_phone
 from app.admin.flash import flash_error, flash_success, flash_warning
-from app.admin.services import get_dashboard_stats, probe_database
+from app.admin.rekaz_ui import (
+    FIELDS_BY_KIND,
+    PAYLOAD_KIND_LABELS_AR,
+    PAYLOAD_KIND_ORDER,
+    PHONE_HINTS_AR,
+    build_event_groups,
+    filter_mappings_by_kind,
+    kind_label,
+    mapping_row_context,
+    payload_kind_for_event,
+)
+from app.admin.services import DEFAULT_MAPPING_SEEDS, _EXTRA_EVENT_SEEDS, get_dashboard_stats, probe_database
 from app.config import settings
 from app.database import get_db
 from app.models import (
@@ -159,11 +170,20 @@ async def events_page(
     stmt = stmt.order_by(WebhookEvent.created_at.desc())
     total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
     items = db.execute(stmt.offset((page - 1) * page_size).limit(page_size)).scalars().all()
+    event_rows = [
+        {
+            "event": ev,
+            "kind_label": kind_label(payload_kind_for_event(ev.event_name)),
+            "payload_kind": payload_kind_for_event(ev.event_name).value,
+        }
+        for ev in items
+    ]
     return render_admin(
         request,
         "events.html",
         {
             "active": "events",
+            "event_rows": event_rows,
             "items": items,
             "page": page,
             "page_size": page_size,
@@ -171,6 +191,7 @@ async def events_page(
             "event_name": event_name or "",
             "phone": phone or "",
             "q": q or "",
+            "kind_filters": [{"value": k.value, "label": PAYLOAD_KIND_LABELS_AR[k]} for k in PAYLOAD_KIND_ORDER],
         },
     )
 
@@ -191,10 +212,17 @@ async def event_detail_page(
         payload_pretty = json.dumps(json.loads(ev.payload_json), ensure_ascii=False, indent=2)
     except Exception:
         payload_pretty = ev.payload_json
+    kind = payload_kind_for_event(ev.event_name)
     return render_admin(
         request,
         "event_detail.html",
-        {"active": "events", "event": ev, "payload_pretty": payload_pretty},
+        {
+            "active": "events",
+            "event": ev,
+            "payload_pretty": payload_pretty,
+            "kind_label": kind_label(kind),
+            "phone_hint": PHONE_HINTS_AR.get(kind, ""),
+        },
     )
 
 
@@ -377,6 +405,9 @@ async def templates_page(
             "active": "templates",
             "items": list_all_templates(db),
             "param_labels": PARAM_LABELS_AR,
+            "fields_by_kind": FIELDS_BY_KIND,
+            "kind_labels": PAYLOAD_KIND_LABELS_AR,
+            "kind_order": PAYLOAD_KIND_ORDER,
         },
     )
 
@@ -501,20 +532,36 @@ async def mappings_page(
     request: Request,
     auth: str | RedirectResponse = Depends(require_admin_page),
     db: Session = Depends(get_db),
+    kind: str = "all",
 ):
     if redir := _auth_or_redirect(auth):
         return redir
-    items = db.execute(
+    all_items = db.execute(
         select(EventTemplateMapping).order_by(EventTemplateMapping.event_name)
     ).scalars().all()
+    items = filter_mappings_by_kind(all_items, kind if kind != "all" else None)
+    mapping_rows = [mapping_row_context(m) for m in items]
+    seed_events = [*DEFAULT_MAPPING_SEEDS, *_EXTRA_EVENT_SEEDS]
+    kind_filters = [{"value": "all", "label": "الكل"}] + [
+        {"value": k.value, "label": PAYLOAD_KIND_LABELS_AR[k]}
+        for k in PAYLOAD_KIND_ORDER
+        if k.value != "unknown"
+    ]
+    kind_filter_label = next((f["label"] for f in kind_filters if f["value"] == kind), "الكل")
     return render_admin(
         request,
         "mappings.html",
         {
             "active": "mappings",
+            "mapping_rows": mapping_rows,
             "items": items,
             "template_list": list_enabled_templates(db),
             "roles": NOTIFICATION_ROLES,
+            "kind_filter": kind,
+            "kind_filter_label": kind_filter_label,
+            "kind_filters": kind_filters,
+            "event_groups": build_event_groups(seed_events),
+            "kind_labels": PAYLOAD_KIND_LABELS_AR,
         },
     )
 

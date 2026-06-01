@@ -8,12 +8,20 @@
 
 <div class="detail-grid">
   <div class="detail-item">
+    <dt>نوع الحمولة</dt>
+    <dd><span class="badge badge-muted">{{ kind_label }}</span></dd>
+  </div>
+  <div class="detail-item">
     <dt>المعرّف الخارجي</dt>
     <dd class="ltr font-mono">{{ event.external_event_id }}</dd>
   </div>
   <div class="detail-item">
     <dt>الجوال</dt>
     <dd class="ltr">{{ event.phone or '—' }}</dd>
+  </div>
+  <div class="detail-item">
+    <dt>مصدر الرقم</dt>
+    <dd style="font-size: 0.9rem; color: var(--text-muted);">{{ phone_hint }}</dd>
   </div>
   <div class="detail-item">
     <dt>وقت الاستلام</dt>

@@ -95,6 +95,14 @@ PARAM_LABELS_AR: dict[str, str] = {
     "price_name": "فئة السعر",
     "order_code": "رقم الطلب",
     "gift_id": "معرّف الهدية",
+    "entity_id": "معرّف الكيان",
+    "subscription_number": "رقم الاشتراك",
+    "subscription_code": "كود الاشتراك",
+    "items_summary": "ملخص المنتجات",
+    "discount": "الخصم",
+    "status": "الحالة",
+    "end_date": "تاريخ النهاية",
+    "payload_kind": "نوع الحمولة",
 }
 
 _SPECS_CACHE: dict[str, list[str]] | None = None
