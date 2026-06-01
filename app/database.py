@@ -93,6 +93,8 @@ def init_db() -> None:
     Base.metadata.create_all(bind=engine)
     logger.info("init_db_tables_created")
 
+    _ensure_schema_upgrades()
+
     # SQLite-only best-effort migration helpers
     if is_sqlite:
         _ensure_sqlite_schema()
@@ -101,6 +103,53 @@ def init_db() -> None:
     _seed_runtime_config()
 
     logger.info("init_db_completed")
+
+
+def _ensure_schema_upgrades() -> None:
+    """
+    Add columns/tables that create_all does not alter on existing databases.
+    Runs on both SQLite and PostgreSQL (Railway production).
+    """
+    with engine.begin() as conn:
+        if is_postgres:
+            conn.execute(
+                text(
+                    "ALTER TABLE event_template_mappings "
+                    "ADD COLUMN IF NOT EXISTS staff_role VARCHAR(64)"
+                )
+            )
+            conn.execute(
+                text(
+                    "ALTER TABLE event_template_mappings "
+                    "ADD COLUMN IF NOT EXISTS staff_template_name VARCHAR(100)"
+                )
+            )
+            logger.info("postgres_schema_upgrades_applied")
+        elif is_sqlite:
+            mapping_columns = {
+                row[1]
+                for row in conn.execute(text("PRAGMA table_info(event_template_mappings)")).fetchall()
+            }
+            for column, column_type in (
+                ("staff_role", "TEXT"),
+                ("staff_template_name", "TEXT"),
+            ):
+                if column not in mapping_columns:
+                    conn.execute(
+                        text(f"ALTER TABLE event_template_mappings ADD COLUMN {column} {column_type}")
+                    )
+                    logger.info(
+                        "sqlite_column_added",
+                        extra={
+                            "extra": {
+                                "table": "event_template_mappings",
+                                "column": column,
+                                "type": column_type,
+                            }
+                        },
+                    )
+
+    logger.info("schema_upgrades_completed")
 
 
 def _seed_runtime_config() -> None:
@@ -233,20 +282,5 @@ def _ensure_sqlite_schema() -> None:
             logger.info("sqlite_sent_notifications_indexes_ensured")
         except Exception as exc:
             logger.warning("sqlite_sent_notifications_index_failed", extra={"extra": {"error": str(exc)}})
-
-        # ── event_template_mappings staff columns ──
-        mapping_columns = {
-            row[1] for row in conn.execute(text("PRAGMA table_info(event_template_mappings)")).fetchall()
-        }
-        for column, column_type in (
-            ("staff_role", "TEXT"),
-            ("staff_template_name", "TEXT"),
-        ):
-            if column not in mapping_columns:
-                conn.execute(text(f"ALTER TABLE event_template_mappings ADD COLUMN {column} {column_type}"))
-                logger.info(
-                    "sqlite_column_added",
-                    extra={"extra": {"table": "event_template_mappings", "column": column, "type": column_type}},
-                )
 
     logger.info("sqlite_schema_migration_completed")
