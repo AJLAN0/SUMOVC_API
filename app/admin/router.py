@@ -25,6 +25,7 @@ from app.database import get_db
 from app.models import (
     EventTemplateMapping,
     MessageLog,
+    RoleRecipient,
     ScheduledMessage,
     SentNotification,
     WebhookEvent,
@@ -39,6 +40,13 @@ from app.services.template_catalog import (
     list_all_templates,
     list_enabled_templates,
     param_keys_to_json,
+)
+from app.services.role_recipients import NOTIFICATION_ROLES, add_recipient, list_recipients_by_role
+from app.services.runtime_settings import (
+    get_runtime_settings_view,
+    set_setting,
+    SETTING_ALLOWED_LATE_MINUTES,
+    SETTING_REMINDER_BEFORE_MINUTES,
 )
 
 router = APIRouter(tags=["admin-pages"])
@@ -270,6 +278,7 @@ async def scheduled_page(
             "total": total,
             "status": status or "",
             "templates": list_enabled_templates(db),
+            "reminder_before_minutes": get_runtime_settings_view(db)["reminder_before_minutes"]["value"],
         },
     )
 
@@ -505,6 +514,7 @@ async def mappings_page(
             "active": "mappings",
             "items": items,
             "template_list": list_enabled_templates(db),
+            "roles": NOTIFICATION_ROLES,
         },
     )
 
@@ -518,6 +528,8 @@ async def mapping_create(
     template_name: str = Form(...),
     enabled: str = Form("on"),
     description: str = Form(""),
+    staff_role: str = Form(""),
+    staff_template_name: str = Form(""),
 ):
     if redir := _auth_or_redirect(auth):
         return redir
@@ -526,11 +538,19 @@ async def mapping_create(
     if not event_name.strip() or not template_name.strip():
         flash_error(request, "أدخل اسم الحدث واختر القالب.")
         return RedirectResponse("/dashboard/mappings", status_code=302)
+
+    role = staff_role.strip() or None
+    if role and role not in NOTIFICATION_ROLES:
+        flash_error(request, "دور الموظفين غير صالح.")
+        return RedirectResponse("/dashboard/mappings", status_code=302)
+
     row = EventTemplateMapping(
         event_name=event_name.strip(),
         template_name=template_name.strip(),
         enabled=enabled == "on",
         description=description.strip() or None,
+        staff_role=role,
+        staff_template_name=staff_template_name.strip() or None,
         updated_at=datetime.utcnow(),
     )
     try:
@@ -589,5 +609,81 @@ async def system_page(
             "settings_labels": SETTINGS_LABELS_AR,
             "mapping_count": mapping_count,
             "db_probe": probe_database(),
+            "runtime_settings": get_runtime_settings_view(db),
+            "roles": NOTIFICATION_ROLES,
+            "recipients": list_recipients_by_role(db),
         },
     )
+
+
+@router.post("/dashboard/settings/timing", response_class=HTMLResponse)
+async def settings_timing_submit(
+    request: Request,
+    auth: str | RedirectResponse = Depends(require_admin_page),
+    db: Session = Depends(get_db),
+    reminder_before_minutes: int = Form(...),
+    allowed_late_minutes: int = Form(...),
+):
+    if redir := _auth_or_redirect(auth):
+        return redir
+    if reminder_before_minutes < 1 or reminder_before_minutes > 1440:
+        flash_error(request, "دقائق قبل التذكير يجب أن تكون بين 1 و 1440.")
+        return RedirectResponse("/dashboard/system", status_code=302)
+    if allowed_late_minutes < 0 or allowed_late_minutes > 1440:
+        flash_error(request, "دقائق التأخير يجب أن تكون بين 0 و 1440.")
+        return RedirectResponse("/dashboard/system", status_code=302)
+
+    set_setting(db, SETTING_REMINDER_BEFORE_MINUTES, str(reminder_before_minutes))
+    set_setting(db, SETTING_ALLOWED_LATE_MINUTES, str(allowed_late_minutes))
+    flash_success(request, "تم حفظ إعدادات التذكير.")
+    return RedirectResponse("/dashboard/system", status_code=302)
+
+
+@router.post("/dashboard/recipients/add", response_class=HTMLResponse)
+async def recipient_add(
+    request: Request,
+    auth: str | RedirectResponse = Depends(require_admin_page),
+    db: Session = Depends(get_db),
+    role: str = Form(...),
+    phone: str = Form(...),
+    label: str = Form(""),
+):
+    if redir := _auth_or_redirect(auth):
+        return redir
+    if phone_err := validate_phone(phone):
+        flash_error(request, phone_err, hint="مثال: 966583771046")
+        return RedirectResponse("/dashboard/system", status_code=302)
+    try:
+        add_recipient(db, role.strip(), phone, label.strip() or None)
+        flash_success(request, "تمت إضافة الرقم.")
+    except ValueError as exc:
+        msg = str(exc)
+        if msg.startswith("invalid_role"):
+            flash_error(request, "دور غير صالح.")
+        elif msg == "invalid_phone":
+            flash_error(request, "رقم الجوال غير صالح.")
+        else:
+            flash_error(request, "تعذر إضافة الرقم.", hint=msg)
+    except IntegrityError:
+        db.rollback()
+        flash_error(request, "هذا الرقم مضاف مسبقاً لنفس الدور.")
+    return RedirectResponse("/dashboard/system", status_code=302)
+
+
+@router.post("/dashboard/recipients/{recipient_id}/toggle", response_class=HTMLResponse)
+async def recipient_toggle(
+    request: Request,
+    recipient_id: str,
+    auth: str | RedirectResponse = Depends(require_admin_page),
+    db: Session = Depends(get_db),
+):
+    if redir := _auth_or_redirect(auth):
+        return redir
+    from app.services.role_recipients import invalidate_role_cache
+
+    row = db.get(RoleRecipient, recipient_id)
+    if row:
+        row.enabled = not row.enabled
+        db.commit()
+        invalidate_role_cache()
+    return RedirectResponse("/dashboard/system", status_code=302)

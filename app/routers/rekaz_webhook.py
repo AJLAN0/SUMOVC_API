@@ -19,6 +19,8 @@ from app.services.rekaz import (
     normalize_phone,
     rekaz_start_to_utc,
 )
+from app.services.runtime_settings import get_allowed_late_minutes, get_reminder_before_minutes
+from app.services.role_recipients import get_phones_for_role
 
 router = APIRouter()
 logger = logging.getLogger("app.rekaz_webhook")
@@ -107,37 +109,52 @@ def _claim_notification_slot(
         return False
 
 
-# ── Admin send helper ───────────────────────────────────────────────────
+# ── Staff send helper (role-based) ──────────────────────────────────────
 
-async def _send_admin_notifications(
+async def _send_staff_notifications(
     fields: dict[str, str],
+    event_name: str,
     request_id: str,
     db: Session,
 ) -> None:
-    """Send admin_reservation_confirmedddd to each configured admin phone (at most once per reservation)."""
-    admin_phones = settings.admin_numbers()
-    if not admin_phones:
-        logger.debug("admin_send_skipped_no_admin_numbers", extra={"extra": {"request_id": request_id}})
+    """Send staff template to phones for the role configured on this event mapping."""
+    from app.admin.services import get_staff_notification_for_event
+
+    staff_role, staff_template = get_staff_notification_for_event(db, event_name)
+    if not staff_role or not staff_template:
+        logger.debug(
+            "staff_send_skipped_no_mapping",
+            extra={"extra": {"request_id": request_id, "event_name": event_name}},
+        )
+        return
+
+    staff_phones = get_phones_for_role(db, staff_role)
+    if not staff_phones:
+        logger.debug(
+            "staff_send_skipped_no_phones",
+            extra={"extra": {"request_id": request_id, "staff_role": staff_role}},
+        )
         return
 
     reservation_number = fields.get("reservation_number")
-    admin_template = "admin_reservation_confirmedddd"
     language = "en"
-    admin_params = build_template_parameters(
-        admin_template,
+    staff_params = build_template_parameters(
+        staff_template,
         fields,
         placeholder=settings.EMPTY_PARAM_PLACEHOLDER,
         db=db,
     )
+    notification_type = f"staff_confirmed:{staff_role}"
 
-    for admin_phone in admin_phones:
-        if not _claim_notification_slot(reservation_number, "admin_confirmed", admin_phone, request_id, db):
+    for staff_phone in staff_phones:
+        if not _claim_notification_slot(reservation_number, notification_type, staff_phone, request_id, db):
             logger.info(
-                "admin_confirmed_already_sent",
+                "staff_confirmed_already_sent",
                 extra={
                     "extra": {
                         "request_id": request_id,
-                        "admin_phone": admin_phone,
+                        "staff_phone": staff_phone,
+                        "staff_role": staff_role,
                         "reservation_number": reservation_number,
                     }
                 },
@@ -146,23 +163,24 @@ async def _send_admin_notifications(
 
         try:
             logger.info(
-                "admin_send_started",
+                "staff_send_started",
                 extra={
                     "extra": {
                         "request_id": request_id,
-                        "admin_phone": admin_phone,
-                        "template": admin_template,
-                        "param_count": len(admin_params),
+                        "staff_phone": staff_phone,
+                        "staff_role": staff_role,
+                        "template": staff_template,
+                        "param_count": len(staff_params),
                     }
                 },
             )
             success, response_body, response_json = await send_whatsapp_template(
-                admin_template, admin_phone, admin_params,
+                staff_template, staff_phone, staff_params,
                 language=language,
             )
-            admin_log = MessageLog(
-                phone=admin_phone,
-                template_name=admin_template,
+            staff_log = MessageLog(
+                phone=staff_phone,
+                template_name=staff_template,
                 status="success" if success else "failed",
                 provider_response=format_provider_response(success, response_body),
                 conversation_event_id=response_json.get("conversationeventid"),
@@ -171,24 +189,31 @@ async def _send_admin_notifications(
                 last_status=response_json.get("status"),
                 error_reason=response_json.get("message"),
             )
-            db.add(admin_log)
+            db.add(staff_log)
             db.commit()
 
             logger.info(
-                "admin_send_result",
+                "staff_send_result",
                 extra={
                     "extra": {
                         "request_id": request_id,
-                        "admin_phone": admin_phone,
+                        "staff_phone": staff_phone,
+                        "staff_role": staff_role,
                         "success": success,
-                        "message_log_id": admin_log.id,
+                        "message_log_id": staff_log.id,
                     }
                 },
             )
         except Exception:
             logger.exception(
-                "admin_send_failed",
-                extra={"extra": {"request_id": request_id, "admin_phone": admin_phone}},
+                "staff_send_failed",
+                extra={
+                    "extra": {
+                        "request_id": request_id,
+                        "staff_phone": staff_phone,
+                        "staff_role": staff_role,
+                    }
+                },
             )
 
 
@@ -215,7 +240,7 @@ def _schedule_reminder(
         )
         return
 
-    run_at = start_utc - timedelta(minutes=settings.REMINDER_BEFORE_MINUTES)
+    run_at = start_utc - timedelta(minutes=get_reminder_before_minutes(db))
     now_utc = datetime.utcnow()
 
     if run_at <= now_utc:
@@ -269,7 +294,7 @@ def _schedule_reminder(
                     "start_riyadh": start_riyadh.strftime("%Y-%m-%d %H:%M"),
                     "raw_start_iso": start_iso,
                     "reservation_number": fields.get("reservation_number"),
-                    "before_minutes": settings.REMINDER_BEFORE_MINUTES,
+                    "before_minutes": get_reminder_before_minutes(db),
                 }
             },
         )
@@ -339,6 +364,8 @@ async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
 
         # ── Extract all fields using the centralized helper ──
         fields = extract_fields(payload)
+        if not fields.get("allowed_late_minutes"):
+            fields["allowed_late_minutes"] = str(get_allowed_late_minutes(db))
 
         data = payload.get("Data") or payload.get("data") or {}
         customer = data.get("customer") or data.get("Customer") or {}
@@ -584,8 +611,10 @@ async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
 
             # ── Post-send actions (template mode only) ──
 
+            if success and not is_duplicate:
+                await _send_staff_notifications(fields, event_name, request_id, db)
+
             if template_name == "reservation_confirmedddddddd" and success and not is_duplicate:
-                await _send_admin_notifications(fields, request_id, db)
                 if phone:
                     _schedule_reminder(fields, phone, external_event_id, request_id, db)
 

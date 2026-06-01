@@ -20,6 +20,7 @@ from app.config import settings
 from app.database import SessionLocal, init_db
 from app.models import ScheduledMessage
 from app.services.rekaz import build_template_parameters
+from app.services.role_recipients import get_phones_for_role
 
 init_db()
 
@@ -28,11 +29,15 @@ def main():
     phone = sys.argv[1] if len(sys.argv) > 1 else None
 
     if not phone:
-        admin_phones = settings.admin_numbers()
+        db = SessionLocal()
+        try:
+            admin_phones = get_phones_for_role(db, "admin")
+        finally:
+            db.close()
         if admin_phones:
             phone = admin_phones[0]
         else:
-            print("ERROR: pass a phone number as argument or set ADMIN_TO_NUMBERS in .env")
+            print("ERROR: pass a phone number as argument or add admin role phones in dashboard")
             sys.exit(1)
 
     db = SessionLocal()

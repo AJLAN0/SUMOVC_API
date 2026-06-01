@@ -18,10 +18,25 @@ from app.database import get_db
 from app.models import (
     EventTemplateMapping,
     MessageLog,
+    RoleRecipient,
     ScheduledMessage,
     SentNotification,
     WebhookEvent,
     WhatsAppTemplate,
+)
+from app.services.role_recipients import (
+    NOTIFICATION_ROLES,
+    add_recipient,
+    invalidate_role_cache,
+    is_valid_role,
+    list_recipients_by_role,
+)
+from app.services.runtime_settings import (
+    get_runtime_settings_view,
+    invalidate_settings_cache,
+    set_setting,
+    SETTING_ALLOWED_LATE_MINUTES,
+    SETTING_REMINDER_BEFORE_MINUTES,
 )
 from app.services.template_catalog import (
     invalidate_template_cache,
@@ -39,6 +54,8 @@ class MappingCreate(BaseModel):
     template_name: str
     enabled: bool = True
     description: str | None = None
+    staff_role: str | None = None
+    staff_template_name: str | None = None
 
 
 class MappingUpdate(BaseModel):
@@ -46,6 +63,8 @@ class MappingUpdate(BaseModel):
     template_name: str | None = None
     enabled: bool | None = None
     description: str | None = None
+    staff_role: str | None = None
+    staff_template_name: str | None = None
 
 
 class ScheduledCreate(BaseModel):
@@ -67,6 +86,23 @@ class ScheduledUpdate(BaseModel):
     status: str | None = None
     attempts: int | None = None
     last_error: str | None = None
+
+
+class RuntimeSettingsUpdate(BaseModel):
+    reminder_before_minutes: int
+    allowed_late_minutes: int
+
+
+class RecipientCreate(BaseModel):
+    role: str
+    phone: str
+    label: str | None = None
+    enabled: bool = True
+
+
+class RecipientUpdate(BaseModel):
+    label: str | None = None
+    enabled: bool | None = None
 
 
 @router.get("/stats")
@@ -568,6 +604,8 @@ def api_list_mappings(
                 "template_name": i.template_name,
                 "enabled": i.enabled,
                 "description": i.description,
+                "staff_role": i.staff_role,
+                "staff_template_name": i.staff_template_name,
                 "updated_at": i.updated_at.isoformat() if i.updated_at else None,
             }
             for i in items
@@ -587,6 +625,8 @@ def api_create_mapping(
         template_name=body.template_name.strip(),
         enabled=body.enabled,
         description=body.description,
+        staff_role=(body.staff_role or "").strip() or None,
+        staff_template_name=(body.staff_template_name or "").strip() or None,
         updated_at=datetime.utcnow(),
     )
     db.add(row)
@@ -630,4 +670,97 @@ def api_delete_mapping(
     db.delete(row)
     db.commit()
     invalidate_mapping_cache()
+    return {"ok": True}
+
+
+# ── Runtime settings ────────────────────────────────────────────────────
+
+@router.get("/settings")
+def api_get_settings(
+    _: str = Depends(require_admin_api),
+    db: Session = Depends(get_db),
+):
+    return {
+        "settings": get_runtime_settings_view(db),
+        "roles": NOTIFICATION_ROLES,
+    }
+
+
+@router.patch("/settings")
+def api_update_settings(
+    body: RuntimeSettingsUpdate,
+    _: str = Depends(require_admin_api),
+    db: Session = Depends(get_db),
+):
+    if body.reminder_before_minutes < 1 or body.reminder_before_minutes > 1440:
+        raise HTTPException(400, detail={"message_ar": "دقائق قبل التذكير يجب أن تكون بين 1 و 1440"})
+    if body.allowed_late_minutes < 0 or body.allowed_late_minutes > 1440:
+        raise HTTPException(400, detail={"message_ar": "دقائق التأخير يجب أن تكون بين 0 و 1440"})
+
+    set_setting(db, SETTING_REMINDER_BEFORE_MINUTES, str(body.reminder_before_minutes))
+    set_setting(db, SETTING_ALLOWED_LATE_MINUTES, str(body.allowed_late_minutes))
+    invalidate_settings_cache()
+    return {"ok": True, "settings": get_runtime_settings_view(db)}
+
+
+# ── Role recipients ─────────────────────────────────────────────────────
+
+@router.get("/recipients")
+def api_list_recipients(
+    _: str = Depends(require_admin_api),
+    db: Session = Depends(get_db),
+):
+    return {"roles": NOTIFICATION_ROLES, "recipients": list_recipients_by_role(db)}
+
+
+@router.post("/recipients")
+def api_create_recipient(
+    body: RecipientCreate,
+    _: str = Depends(require_admin_api),
+    db: Session = Depends(get_db),
+):
+    if not is_valid_role(body.role):
+        raise HTTPException(400, detail={"message_ar": "دور غير صالح"})
+    try:
+        row = add_recipient(db, body.role, body.phone, body.label, body.enabled)
+    except ValueError as exc:
+        raise HTTPException(400, detail={"message_ar": str(exc)}) from exc
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(400, detail=str(exc)) from exc
+    return {"id": row.id}
+
+
+@router.patch("/recipients/{recipient_id}")
+def api_update_recipient(
+    recipient_id: str,
+    body: RecipientUpdate,
+    _: str = Depends(require_admin_api),
+    db: Session = Depends(get_db),
+):
+    row = db.get(RoleRecipient, recipient_id)
+    if not row:
+        raise HTTPException(404, "Recipient not found")
+    data = body.model_dump(exclude_unset=True)
+    if "label" in data:
+        row.label = (data["label"] or "").strip() or None
+    if "enabled" in data:
+        row.enabled = data["enabled"]
+    db.commit()
+    invalidate_role_cache()
+    return {"ok": True}
+
+
+@router.delete("/recipients/{recipient_id}")
+def api_delete_recipient(
+    recipient_id: str,
+    _: str = Depends(require_admin_api),
+    db: Session = Depends(get_db),
+):
+    row = db.get(RoleRecipient, recipient_id)
+    if not row:
+        raise HTTPException(404, "Recipient not found")
+    db.delete(row)
+    db.commit()
+    invalidate_role_cache()
     return {"ok": True}

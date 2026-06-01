@@ -102,8 +102,38 @@ class EventTemplateMapping(Base):
     template_name: Mapped[str] = mapped_column(String(100))
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     description: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Staff notification routing: which role receives which template on this event
+    staff_role: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    staff_template_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class AppSetting(Base):
+    """Runtime-editable settings (dashboard); env vars are fallbacks."""
+
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(String(512), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class RoleRecipient(Base):
+    """WhatsApp recipients grouped by notification role."""
+
+    __tablename__ = "role_recipients"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    role: Mapped[str] = mapped_column(String(64), index=True)
+    phone: Mapped[str] = mapped_column(String(32))
+    label: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("role", "phone", name="uq_role_recipient_role_phone"),
+    )
 
 
 class WhatsAppTemplate(Base):

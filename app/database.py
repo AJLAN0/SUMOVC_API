@@ -98,8 +98,25 @@ def init_db() -> None:
         _ensure_sqlite_schema()
 
     _seed_event_mappings()
+    _seed_runtime_config()
 
     logger.info("init_db_completed")
+
+
+def _seed_runtime_config() -> None:
+    from app.services.role_recipients import seed_role_recipients
+    from app.services.runtime_settings import seed_app_settings
+
+    db = SessionLocal()
+    try:
+        seed_app_settings(db)
+        seed_role_recipients(db)
+        logger.info("runtime_config_seeded")
+    except Exception as exc:
+        logger.warning("runtime_config_seed_failed", extra={"extra": {"error": str(exc)}})
+        db.rollback()
+    finally:
+        db.close()
 
 
 def _seed_event_mappings() -> None:
@@ -216,5 +233,20 @@ def _ensure_sqlite_schema() -> None:
             logger.info("sqlite_sent_notifications_indexes_ensured")
         except Exception as exc:
             logger.warning("sqlite_sent_notifications_index_failed", extra={"extra": {"error": str(exc)}})
+
+        # ── event_template_mappings staff columns ──
+        mapping_columns = {
+            row[1] for row in conn.execute(text("PRAGMA table_info(event_template_mappings)")).fetchall()
+        }
+        for column, column_type in (
+            ("staff_role", "TEXT"),
+            ("staff_template_name", "TEXT"),
+        ):
+            if column not in mapping_columns:
+                conn.execute(text(f"ALTER TABLE event_template_mappings ADD COLUMN {column} {column_type}"))
+                logger.info(
+                    "sqlite_column_added",
+                    extra={"extra": {"table": "event_template_mappings", "column": column, "type": column_type}},
+                )
 
     logger.info("sqlite_schema_migration_completed")
