@@ -50,6 +50,8 @@ DEFAULT_TEMPLATE_SPECS: dict[str, list[str]] = {
         "product_name",
         "redemption_url",
     ],
+    "product_done_clint": ["product_name"],
+    "product_done_admin": ["customer_name", "product_name"],
 }
 
 DEFAULT_TEMPLATE_META: dict[str, dict[str, str]] = {
@@ -71,6 +73,14 @@ DEFAULT_TEMPLATE_META: dict[str, dict[str, str]] = {
     "gifft_send": {
         "title_ar": "إرسال الهدية للمستلم (قديم)",
         "description": "استخدم gift_clint_send",
+    },
+    "product_done_clint": {
+        "title_ar": "تأكيد شراء المنتج للعميل",
+        "description": "MerchandiseOrderCompletedEvent — اسم المنتج {{1}}",
+    },
+    "product_done_admin": {
+        "title_ar": "إشعار طلب منتجات للفريق",
+        "description": "MerchandiseOrderCompletedEvent — فني منتجات — اسم العميل {{1}} + المنتج {{2}}",
     },
 }
 

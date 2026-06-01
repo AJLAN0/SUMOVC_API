@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% from "_macros.html" import page_header, empty_row, stat_card, log_type_badge, log_status_badge, log_desc_cell %}
+{% block title %}سجل النشاط — SUMO{% endblock %}
+{% block content %}
+{{ page_header('سجل النشاط', 'كل ما يحدث في النظام — مرتّب حسب الوقت مع شرح واضح لكل سجل') }}
+
+<div class="stat-grid">
+  {{ stat_card('أحداث ركاز اليوم', stats.webhooks_today, '#60a5fa', '#93c5fd') }}
+  {{ stat_card('رسائل ناجحة اليوم', stats.messages_sent_today, '#34d399', '#34d399') }}
+  {{ stat_card('رسائل فاشلة اليوم', stats.messages_failed_today, '#f87171', '#f87171') }}
+  {{ stat_card('تذكيرات معلّقة', stats.pending_reminders, '#fbbf24', '#fbbf24') }}
+</div>
+
+<div class="log-guide-grid">
+  {% for key, desc in log_type_descriptions.items() %}
+  <div class="log-guide-card log-guide-card--{{ key }}">
+    <span class="log-guide-card__dot"></span>
+    <strong>{{ log_type_labels[key] }}</strong>
+    <p>{{ desc }}</p>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="log-filter-chips">
+  <span class="log-filter-chips__label">عرض سريع:</span>
+  {% for opt in log_type_options %}
+  <a href="/dashboard/logs?log_type={{ opt.value }}&status={{ status }}&phone={{ phone }}&q={{ q }}&kind={{ kind }}"
+     class="log-chip {% if log_type == opt.value %}log-chip--active{% endif %}">{{ opt.label }}</a>
+  {% endfor %}
+</div>
+
+<form method="get" class="filter-bar">
+  <input type="hidden" name="log_type" value="{{ log_type }}" />
+  <div class="form-group" style="margin: 0; min-width: 140px;">
+    <label class="form-label">الحالة</label>
+    <select name="status" class="form-select">
+      <option value="">الكل</option>
+      {% for opt in status_options %}
+      <option value="{{ opt.value }}" {% if status == opt.value %}selected{% endif %}>{{ opt.label }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  {% if log_type in ['all', 'webhook'] %}
+  <div class="form-group" style="margin: 0; min-width: 140px;">
+    <label class="form-label">نوع الحمولة (ركاز)</label>
+    <select name="kind" class="form-select">
+      {% for opt in kind_options %}
+      <option value="{{ opt.value }}" {% if kind == opt.value %}selected{% endif %}>{{ opt.label }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  {% endif %}
+  <div class="form-group" style="margin: 0; min-width: 150px;">
+    <label class="form-label">رقم الجوال</label>
+    <input name="phone" value="{{ phone }}" placeholder="9665..." class="form-input ltr" dir="ltr" />
+  </div>
+  <div class="form-group" style="margin: 0; flex: 1; min-width: 180px;">
+    <label class="form-label">بحث</label>
+    <input name="q" value="{{ q }}" placeholder="حدث، قالب، رقم حجز..." class="form-input" />
+  </div>
+  <button type="submit" class="btn btn-primary" style="align-self: flex-end;">تطبيق التصفية</button>
+  <a href="/dashboard/logs" class="btn btn-ghost" style="align-self: flex-end;">مسح الكل</a>
+</form>
+
+<div class="card">
+  <div class="card-header">
+    <div>
+      <h3>السجلات</h3>
+      <p class="card-header-sub">
+        عرض <strong>{{ items|length }}</strong> من <strong>{{ total }}</strong>
+        {% if log_type != 'all' %} — {{ log_type_labels.get(log_type, log_type) }}{% endif %}
+      </p>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table class="data-table log-table">
+      <thead>
+        <tr>
+          <th style="width: 130px;">الوقت</th>
+          <th style="width: 110px;">النوع</th>
+          <th>ماذا حدث</th>
+          <th style="width: 130px;">الجوال</th>
+          <th style="width: 110px;">الحالة</th>
+          <th style="min-width: 180px;">ملاحظة</th>
+          <th style="width: 90px;">إجراء</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in items %}
+        <tr class="log-row log-row--{{ item.log_type }}" id="log-{{ item.log_type }}-{{ item.id }}">
+          <td class="log-time ltr" data-label="الوقت">{{ item.at.strftime('%Y-%m-%d') if item.at else '—' }}<br><span>{{ item.at.strftime('%H:%M') if item.at else '' }}</span></td>
+          <td data-label="النوع">{{ log_type_badge(item.log_type, item.log_type_label) }}</td>
+          <td data-label="ماذا حدث">{{ log_desc_cell(item) }}</td>
+          <td class="ltr" data-label="الجوال">{{ item.phone or '—' }}</td>
+          <td data-label="الحالة">{{ log_status_badge(item.status, item.status_label) }}</td>
+          <td class="log-note-cell" data-label="ملاحظة">
+            {% if item.status == 'failed' and item.error_title %}
+            <span class="log-note-error">{{ item.error_title }}</span>
+            <span class="log-note-muted">{{ item.error_message or item.note }}</span>
+            {% elif item.note %}
+            <span class="log-note-muted">{{ item.note }}</span>
+            {% else %}
+            <span class="log-note-muted">—</span>
+            {% endif %}
+          </td>
+          <td style="white-space: nowrap;" data-label="إجراء">
+            <a href="{{ item.detail_url }}" class="btn-link">عرض</a>
+          </td>
+        </tr>
+        {% else %}
+        {{ empty_row(7, 'لا توجد سجلات مطابقة — جرّب مسح التصفية أو تغيير نوع السجل') }}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% if total > page_size %}
+<div class="pagination">
+  {% if page > 1 %}
+  <a href="?page={{ page - 1 }}&log_type={{ log_type }}&status={{ status }}&phone={{ phone }}&q={{ q }}&kind={{ kind }}">→ السابق</a>
+  {% endif %}
+  <span style="color: var(--text-muted);">صفحة {{ page }}</span>
+  {% if has_more %}
+  <a href="?page={{ page + 1 }}&log_type={{ log_type }}&status={{ status }}&phone={{ phone }}&q={{ q }}&kind={{ kind }}">التالي ←</a>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

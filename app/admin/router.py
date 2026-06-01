@@ -16,6 +16,13 @@ from app.admin.auth import (
     record_login_failure,
     require_admin_page,
 )
+from app.admin.activity_logs import (
+    LOG_TYPE_DESCRIPTIONS_AR,
+    LOG_TYPE_LABELS_AR,
+    STATUS_LABELS_AR,
+    get_activity_logs,
+    get_activity_stats,
+)
 from app.admin.deps import render_admin
 from app.admin.errors import explain_error, validate_phone
 from app.admin.flash import flash_error, flash_success, flash_warning
@@ -142,6 +149,68 @@ async def dashboard_page(
         request,
         "dashboard.html",
         {"stats": stats, "active": "dashboard"},
+    )
+
+
+@router.get("/dashboard/logs", response_class=HTMLResponse)
+async def activity_logs_page(
+    request: Request,
+    auth: str | RedirectResponse = Depends(require_admin_page),
+    db: Session = Depends(get_db),
+    page: int = 1,
+    log_type: str = "all",
+    status: str | None = None,
+    phone: str | None = None,
+    q: str | None = None,
+    kind: str | None = None,
+):
+    if redir := _auth_or_redirect(auth):
+        return redir
+    page_size = 30
+    result = get_activity_logs(
+        db,
+        page=page,
+        page_size=page_size,
+        log_type=log_type or "all",
+        status=status or None,
+        phone=phone or None,
+        q=q or None,
+        kind=kind or None,
+    )
+    stats = get_activity_stats(db)
+    log_type_options = [{"value": "all", "label": "الكل"}] + [
+        {"value": k, "label": v} for k, v in LOG_TYPE_LABELS_AR.items()
+    ]
+    status_options = [
+        {"value": k, "label": v}
+        for k, v in STATUS_LABELS_AR.items()
+        if k not in ("received", "locked") or log_type in ("all", "webhook", "lock")
+    ]
+    kind_options = [{"value": "all", "label": "كل الأنواع"}] + [
+        {"value": k.value, "label": PAYLOAD_KIND_LABELS_AR[k]} for k in PAYLOAD_KIND_ORDER if k.value != "unknown"
+    ]
+    return render_admin(
+        request,
+        "logs.html",
+        {
+            "active": "logs",
+            "items": result["items"],
+            "total": result["total"],
+            "page": result["page"],
+            "page_size": result["page_size"],
+            "has_more": result["has_more"],
+            "stats": stats,
+            "log_type": log_type or "all",
+            "status": status or "",
+            "phone": phone or "",
+            "q": q or "",
+            "kind": kind or "all",
+            "log_type_labels": LOG_TYPE_LABELS_AR,
+            "log_type_descriptions": LOG_TYPE_DESCRIPTIONS_AR,
+            "log_type_options": log_type_options,
+            "status_options": status_options,
+            "kind_options": kind_options,
+        },
     )
 
 

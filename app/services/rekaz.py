@@ -32,6 +32,7 @@ EVENT_TEMPLATE_MAP = {
     "ReservationUpdatedEvent": "reservation_confirmedddddddd",
     "ReservationCancelledEvent": "reservation_cancelled",
     "GiftCreatedEvent": "gift_clint_send",
+    "MerchandiseOrderCompletedEvent": "product_done_clint",
 }
 
 # Re-export payload helpers (webhook + tests)
@@ -116,6 +117,17 @@ TEMPLATE_PARAM_SPECS: dict[str, list[str]] = {
         "message",
         "product_name",
         "redemption_url",
+    ],
+
+    # merchandise – order completed customer (1 body var)
+    "product_done_clint": [
+        "product_name",       # {{1}} item / product name
+    ],
+
+    # merchandise – order completed staff (2 body vars — Hatif template product_done_admin, English)
+    "product_done_admin": [
+        "customer_name",      # {{1}} Clint name
+        "product_name",       # {{2}} product name
     ],
 
 }
@@ -511,6 +523,7 @@ def build_text_message(
         "ReservationUpdatedEvent": "تم تحديث الحجز",
         "GiftCreatedEvent": "تم إرسال هدية",
         "MerchandiseOrderCreatedEvent": "تم إنشاء طلب منتجات",
+        "MerchandiseOrderCompletedEvent": "تم تأكيد شراء المنتجات",
     }
     label = event_labels.get(event_name, event_name)
 

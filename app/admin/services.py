@@ -71,6 +71,14 @@ DEFAULT_MAPPING_SEEDS: list[dict[str, Any]] = [
         "staff_role": "product_technician",
         "staff_template_name": None,
     },
+    {
+        "event_name": "MerchandiseOrderCompletedEvent",
+        "template_name": "product_done_clint",
+        "enabled": True,
+        "description": "Purchase confirmation WhatsApp to Customer",
+        "staff_role": "product_technician",
+        "staff_template_name": "product_done_admin",
+    },
 ]
 
 # Additional Rekaz events — disabled until templates are configured in dashboard
@@ -78,7 +86,7 @@ _EXTRA_EVENT_SEEDS: list[dict[str, Any]] = [
     *[{"event_name": n, "template_name": "", "enabled": False, "description": f"Configure in dashboard — {n}", "staff_role": "admin", "staff_template_name": None} for n in (
         "ReservationDoneEvent",
         "GiftActivatedEvent", "GiftRedeemedEvent", "GiftCancelledEvent",
-        "MerchandiseOrderCompletedEvent", "MerchandiseOrderCanceledEvent",
+        "MerchandiseOrderCanceledEvent",
         "SubscriptionCreatedEvent", "SubscriptionActivatedEvent", "SubscriptionCancelledEvent",
         "SubscriptionExpiredEvent", "SubscriptionPausedEvent", "SubscriptionResumedEvent",
         "SubscriptionTransferredEvent", "SubscriptionPauseScheduledEvent", "SubscriptionUpdatedEvent",
@@ -100,6 +108,15 @@ def seed_event_mappings(db: Session) -> None:
                 elif existing.template_name in ("gifft_send", "sent_gifft"):
                     existing.template_name = seed["template_name"]
                 existing.staff_role = seed.get("staff_role") or existing.staff_role or "admin"
+                existing.description = seed.get("description") or existing.description
+                existing.updated_at = datetime.utcnow()
+            elif seed["event_name"] == "MerchandiseOrderCompletedEvent" and seed.get("template_name"):
+                if not existing.template_name or not existing.template_name.strip():
+                    existing.template_name = seed["template_name"]
+                    existing.enabled = seed.get("enabled", existing.enabled)
+                existing.staff_role = seed.get("staff_role") or existing.staff_role or "product_technician"
+                if seed.get("staff_template_name") and not (existing.staff_template_name or "").strip():
+                    existing.staff_template_name = seed["staff_template_name"]
                 existing.description = seed.get("description") or existing.description
                 existing.updated_at = datetime.utcnow()
             continue

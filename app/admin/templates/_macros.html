@@ -74,3 +74,41 @@
   {% if result.hint %}<p class="health-hint">{{ result.hint }}</p>{% endif %}
 </div>
 {% endmacro %}
+
+{% macro log_type_badge(log_type, label) -%}
+<span class="badge log-type-badge log-type-badge--{{ log_type }}">{{ label }}</span>
+{%- endmacro %}
+
+{% macro log_status_badge(status, label) -%}
+<span class="badge log-status-badge log-status-badge--{{ status }}">{{ label }}</span>
+{%- endmacro %}
+
+{% macro log_desc_cell(item) %}
+<div class="log-desc">
+  <p class="log-desc__action">{{ item.action_text }}</p>
+  <dl class="log-desc__pairs">
+    <div class="log-desc__pair">
+      <dt>{{ item.primary_label }}</dt>
+      <dd class="ltr font-mono" dir="ltr">{{ item.primary_value }}</dd>
+    </div>
+    {% if item.secondary_label and item.secondary_value %}
+    <div class="log-desc__pair">
+      <dt>{{ item.secondary_label }}</dt>
+      <dd class="ltr font-mono" dir="ltr">{{ item.secondary_value }}</dd>
+    </div>
+    {% endif %}
+    {% if item.log_type == 'scheduled' and item.run_at_label %}
+    <div class="log-desc__pair">
+      <dt>موعد الإرسال</dt>
+      <dd class="ltr" dir="ltr">{{ item.run_at_label }}</dd>
+    </div>
+    {% endif %}
+    {% if item.kind_label %}
+    <div class="log-desc__pair">
+      <dt>نوع الحمولة</dt>
+      <dd><span class="badge badge-muted">{{ item.kind_label }}</span></dd>
+    </div>
+    {% endif %}
+  </dl>
+</div>
+{% endmacro %}

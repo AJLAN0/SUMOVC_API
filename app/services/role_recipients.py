@@ -26,6 +26,12 @@ NOTIFICATION_ROLES: dict[str, dict[str, str]] = {
     },
 }
 
+DEFAULT_PRODUCT_TECHNICIAN_PHONES = (
+    "0550556381",
+    "0547537826",
+    "0557019152",
+)
+
 _ROLE_CACHE: dict[str, list[str]] | None = None
 _ROLE_CACHE_AT: float = 0.0
 _ROLE_CACHE_TTL = 30.0
@@ -105,15 +111,38 @@ def add_recipient(
 def seed_role_recipients(db: Session) -> None:
     """Seed admin role from ADMIN_TO_NUMBERS if no recipients exist yet."""
     existing = db.execute(select(RoleRecipient.id).limit(1)).scalar_one_or_none()
-    if existing:
-        return
+    if not existing:
+        admin_phones = settings.admin_numbers()
+        for phone in admin_phones:
+            db.add(RoleRecipient(role="admin", phone=phone, enabled=True))
+        if admin_phones:
+            db.commit()
+            logger.info(
+                "role_recipients_seeded_from_env",
+                extra={"extra": {"role": "admin", "count": len(admin_phones)}},
+            )
 
-    admin_phones = settings.admin_numbers()
-    for phone in admin_phones:
-        db.add(RoleRecipient(role="admin", phone=phone, enabled=True))
-    if admin_phones:
+    _ensure_role_phones(db, "product_technician", DEFAULT_PRODUCT_TECHNICIAN_PHONES)
+
+
+def _ensure_role_phones(db: Session, role: str, raw_phones: tuple[str, ...]) -> None:
+    """Add default phones for a role if they are not already configured."""
+    if not is_valid_role(role):
+        return
+    rows = db.execute(select(RoleRecipient).where(RoleRecipient.role == role)).scalars().all()
+    existing = {row.phone for row in rows}
+    added = 0
+    for raw in raw_phones:
+        phone = normalize_phone(raw.strip())
+        if not phone or phone in existing:
+            continue
+        db.add(RoleRecipient(role=role, phone=phone, enabled=True))
+        existing.add(phone)
+        added += 1
+    if added:
         db.commit()
+        invalidate_role_cache()
         logger.info(
-            "role_recipients_seeded_from_env",
-            extra={"extra": {"role": "admin", "count": len(admin_phones)}},
+            "role_recipients_seeded_defaults",
+            extra={"extra": {"role": role, "count": added}},
         )
