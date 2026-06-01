@@ -13,7 +13,11 @@ _RIYADH = timezone(timedelta(hours=3))
 EVENT_TEMPLATE_MAP = {
     "ReservationConfirmedEvent": "reservation_confirmedddddddd",
     "ReservationCancelledEvent": "reservation_cancelled",
+    "GiftCreatedEvent": "gifft_send",
 }
+
+GIFT_EVENT_NAMES = frozenset({"GiftCreatedEvent"})
+MERCHANDISE_EVENT_NAMES = frozenset({"MerchandiseOrderCreatedEvent"})
 
 # ── Template → ordered BODY parameter names ────────────────────────────
 #
@@ -51,6 +55,17 @@ TEMPLATE_PARAM_SPECS: dict[str, list[str]] = {
         "start_time",         # {{3}} TIME
         "product_name",       # {{4}} PACKAGE NAME
         "branch_name",        # {{5}} LOCATION
+    ],
+
+    # gift – sent to RecipientCustomer (2 body vars — Hatif template gifft_send)
+    "gifft_send": [
+        "from_name",          # {{1}} giver name
+        "gift_coupon_code",   # {{2}} coupon or redemption token
+    ],
+    # legacy alias
+    "sent_gifft": [
+        "from_name",
+        "gift_coupon_code",
     ],
 
 }
@@ -163,6 +178,8 @@ def _fmt_iso(value: str | None) -> str:
 
 def _ci(d: dict, *keys: str):
     """Try each key as-is, then lower, then Title-cased."""
+    if not d:
+        return None
     for key in keys:
         for variant in (key, key.lower(), key[0].upper() + key[1:] if key else key):
             if variant in d:
@@ -170,9 +187,89 @@ def _ci(d: dict, *keys: str):
     return None
 
 
+def is_gift_event(event_name: str | None) -> bool:
+    return bool(event_name and event_name in GIFT_EVENT_NAMES)
+
+
+def is_merchandise_event(event_name: str | None) -> bool:
+    return bool(event_name and event_name in MERCHANDISE_EVENT_NAMES)
+
+
+def _gift_payload(data: dict) -> bool:
+    """Detect gift-shaped payloads even if EventName is missing."""
+    return bool(_ci(data, "RecipientCustomer", "recipientCustomer") or _ci(data, "RedemptionUrl", "redemptionUrl"))
+
+
+def resolve_message_phone(payload: dict, event_name: str | None) -> tuple[str | None, str]:
+    """
+    Resolve the WhatsApp recipient phone from a Rekaz payload.
+
+    Gifts → RecipientCustomer (the person who receives the gift card).
+    Merchandise / reservations → Customer.
+    """
+    data = payload.get("Data") or payload.get("data") or {}
+
+    if is_gift_event(event_name) or _gift_payload(data):
+        recipient = data.get("RecipientCustomer") or data.get("recipientCustomer") or {}
+        phone_raw = _ci(recipient, "MobileNumber", "mobileNumber", "phone")
+        return phone_raw, "recipient_customer"
+
+    if is_merchandise_event(event_name):
+        customer = data.get("Customer") or data.get("customer") or {}
+        phone_raw = _ci(customer, "MobileNumber", "mobileNumber", "phone")
+        return phone_raw, "customer"
+
+    customer = data.get("customer") or data.get("Customer") or {}
+    phone_raw = _ci(customer, "MobileNumber", "mobileNumber", "phone")
+    return phone_raw, "customer"
+
+
+def _gift_redemption_code(data: dict) -> str:
+    """Coupon code from payload, or last segment of RedemptionUrl for giftable products."""
+    code = _ci(data, "giftCouponCode", "GiftCouponCode")
+    if code:
+        return str(code).strip()
+    url = _ci(data, "redemptionUrl", "RedemptionUrl") or ""
+    if url:
+        token = str(url).rstrip("/").split("/")[-1]
+        if token:
+            return token
+    return ""
+
+
+def _gift_from_name(data: dict, buyer: dict) -> str:
+    """Giver display name for gift template {{1}}."""
+    from_name = _ci(data, "fromName", "FromName")
+    if from_name:
+        return str(from_name).strip()
+    buyer_name = _ci(buyer, "name", "Name") or ""
+    show_buyer = _ci(data, "showBuyerInfo", "ShowBuyerInfo")
+    if show_buyer in (True, "true", "True", 1, "1"):
+        return str(buyer_name).strip()
+    # Admin / hidden buyer gifts still need a non-empty Hatif param
+    return str(buyer_name).strip() if buyer_name else "-"
+
+
+def resolve_correlation_id(fields: dict[str, str], event_name: str | None) -> str | None:
+    """Idempotency key source: gift id, order code, or reservation number."""
+    if is_gift_event(event_name):
+        return fields.get("gift_id") or fields.get("reservation_number") or None
+    if is_merchandise_event(event_name):
+        return fields.get("order_code") or fields.get("reservation_number") or None
+    return fields.get("reservation_number") or None
+
+
+def resolve_template_language(payload: dict, event_name: str | None, default: str) -> str:
+    data = payload.get("Data") or payload.get("data") or {}
+    lang = _ci(data, "Language", "language")
+    if lang and str(lang).strip():
+        return str(lang).strip().lower()[:2]
+    return default
+
+
 # ── Extract all known fields from Rekaz payload ────────────────────────
 
-def extract_fields(payload: dict) -> dict[str, str]:
+def extract_fields(payload: dict, event_name: str | None = None) -> dict[str, str]:
     """
     Pull every field the templates might need out of a Rekaz webhook payload
     and return a flat ``{param_name: value}`` dict.
@@ -181,20 +278,55 @@ def extract_fields(payload: dict) -> dict[str, str]:
     Raw ISO datetime strings are also included as ``start_dt_iso`` / ``end_dt_iso``
     for internal use (e.g. scheduling reminders).
     """
+    event_name = event_name or payload.get("EventName") or payload.get("eventName") or ""
     data = payload.get("Data") or payload.get("data") or {}
+
+    buyer = data.get("BuyerCustomer") or data.get("buyerCustomer") or {}
+    recipient = data.get("RecipientCustomer") or data.get("recipientCustomer") or {}
     customer = data.get("customer") or data.get("Customer") or {}
 
+    if is_gift_event(event_name) or _gift_payload(data):
+        customer = recipient
+    elif is_merchandise_event(event_name):
+        customer = data.get("Customer") or data.get("customer") or customer
+
     # ── Raw datetime strings ──
-    start_raw = _ci(data, "startDate", "StartDate", "reservationDate", "ReservationDate")
+    start_raw = _ci(
+        data,
+        "startDate",
+        "StartDate",
+        "reservationDate",
+        "ReservationDate",
+        "creationTime",
+        "CreationTime",
+    )
     end_raw = _ci(data, "endDate", "EndDate")
 
     start_dt = _parse_dt(start_raw)
     end_dt = _parse_dt(end_raw)
 
+    recipient_name = _ci(recipient, "name", "Name") or _ci(data, "toName", "ToName") or ""
+    buyer_name = _ci(buyer, "name", "Name") or _ci(data, "fromName", "FromName") or ""
+    gift_id = str(_ci(data, "id", "Id") or "")
+
     fields: dict[str, str] = {
-        "customer_name":              _ci(customer, "name", "Name") or "",
-        "reservation_number":         str(_ci(data, "number", "Number", "reservationNumber", "ReservationNumber") or ""),
+        "customer_name":              _ci(customer, "name", "Name") or recipient_name or "",
+        "recipient_name":             recipient_name,
+        "buyer_name":                 buyer_name,
+        "to_name":                    _ci(data, "toName", "ToName") or recipient_name or "",
+        "from_name":                  _gift_from_name(data, buyer),
+        "message":                    _ci(data, "message", "Message") or "",
+        "gift_id":                    gift_id,
+        "reservation_number":         str(
+            _ci(data, "number", "Number", "reservationNumber", "ReservationNumber", "code", "Code") or gift_id or ""
+        ),
+        "order_code":                 str(_ci(data, "code", "Code") or ""),
         "product_name":               _ci(data, "productName", "ProductName") or "",
+        "price_name":                 _ci(data, "priceName", "PriceName") or "",
+        "total_price":                str(_ci(data, "totalPrice", "TotalPrice") or ""),
+        "redemption_url":             _ci(data, "redemptionUrl", "RedemptionUrl") or "",
+        "gift_coupon_code":           _gift_redemption_code(data),
+        "gift_theme_name":            _ci(data, "giftThemeName", "GiftThemeName") or "",
 
         # Formatted date / time (for template params)
         "reservation_date":           _fmt_date(start_dt),
@@ -208,7 +340,17 @@ def extract_fields(payload: dict) -> dict[str, str]:
         # Invoice — many possible key names from Rekaz
         "invoice_link":               _ci(data, "invoiceUrl", "InvoiceUrl", "invoiceLink", "InvoiceLink", "invoice", "Invoice") or "",
 
-        "header_image_url":           _ci(data, "imageUrl", "ImageUrl", "image", "Image", "productImage", "ProductImage") or "",
+        "header_image_url":           _ci(
+            data,
+            "giftCardImageUrl",
+            "GiftCardImageUrl",
+            "imageUrl",
+            "ImageUrl",
+            "image",
+            "Image",
+            "productImage",
+            "ProductImage",
+        ) or "",
 
         "cancel_reason":              _ci(data, "cancelReason", "CancelReason", "cancellationReason", "CancellationReason") or "",
         # Rekaz actually sends BranchNameAr / BranchNameEn (not BranchName as their docs claim).
@@ -221,7 +363,7 @@ def extract_fields(payload: dict) -> dict[str, str]:
         "allowed_late_minutes":       str(_ci(data, "allowedLateMinutes", "AllowedLateMinutes") or ""),
     }
 
-    logger.debug("extract_fields_result", extra={"extra": {"fields": fields}})
+    logger.debug("extract_fields_result", extra={"extra": {"event_name": event_name, "fields": fields}})
     return fields
 
 
@@ -289,6 +431,8 @@ def build_text_message(
         "ReservationCompletedEvent": "تم اكتمال الحجز",
         "ReservationDoneEvent": "تم إتمام الحجز",
         "ReservationUpdatedEvent": "تم تحديث الحجز",
+        "GiftCreatedEvent": "تم إرسال هدية",
+        "MerchandiseOrderCreatedEvent": "تم إنشاء طلب منتجات",
     }
     label = event_labels.get(event_name, event_name)
 

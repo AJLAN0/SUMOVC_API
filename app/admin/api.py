@@ -625,7 +625,7 @@ def api_create_mapping(
         template_name=body.template_name.strip(),
         enabled=body.enabled,
         description=body.description,
-        staff_role=(body.staff_role or "").strip() or None,
+        staff_role=(body.staff_role or "").strip() or "admin",
         staff_template_name=(body.staff_template_name or "").strip() or None,
         updated_at=datetime.utcnow(),
     )
@@ -650,7 +650,10 @@ def api_update_mapping(
     row = db.get(EventTemplateMapping, mapping_id)
     if not row:
         raise HTTPException(404, "Mapping not found")
-    for field, value in body.model_dump(exclude_unset=True).items():
+    data = body.model_dump(exclude_unset=True)
+    if "staff_role" in data:
+        data["staff_role"] = (data["staff_role"] or "").strip() or "admin"
+    for field, value in data.items():
         setattr(row, field, value)
     row.updated_at = datetime.utcnow()
     db.commit()

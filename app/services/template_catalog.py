@@ -29,13 +29,32 @@ DEFAULT_TEMPLATE_SPECS: dict[str, list[str]] = {
         "product_name",
         "branch_name",
     ],
+    "sent_gifft": [
+        "from_name",
+        "gift_coupon_code",
+    ],
+    "gifft_send": [
+        "from_name",
+        "gift_coupon_code",
+    ],
 }
 
 DEFAULT_TEMPLATE_META: dict[str, dict[str, str]] = {
     "reservation_confirmedddddddd": {"title_ar": "تأكيد الحجز للعميل", "description": "رسالة تأكيد الحجز"},
     "reservation_reminderrrr": {"title_ar": "تذكير بالموعد", "description": "تذكير قبل الموعد"},
     "reservation_cancelled": {"title_ar": "إلغاء الحجز", "description": "رسالة إلغاء"},
-    "admin_reservation_confirmedddd": {"title_ar": "تأكيد للمشرف", "description": "إشعار المشرفين"},
+    "admin_reservation_confirmedddd": {
+        "title_ar": "تأكيد للمشرف",
+        "description": "إشعار المشرفين",
+    },
+    "sent_gifft": {
+        "title_ar": "إرسال الهدية للمستلم (قديم)",
+        "description": "استخدم gifft_send",
+    },
+    "gifft_send": {
+        "title_ar": "إرسال الهدية للمستلم",
+        "description": "رسالة واتساب للمستلم (RecipientCustomer)",
+    },
 }
 
 # Arabic labels for Rekaz field keys (form hints)
@@ -47,6 +66,18 @@ PARAM_LABELS_AR: dict[str, str] = {
     "end_time": "وقت النهاية",
     "branch_name": "اسم الفرع",
     "cancel_reason": "سبب الإلغاء",
+    "recipient_name": "اسم المستلم",
+    "buyer_name": "اسم المشتري",
+    "to_name": "إلى (المستلم)",
+    "from_name": "من (المرسل)",
+    "message": "رسالة الهدية",
+    "redemption_url": "رابط الاسترداد",
+    "gift_coupon_code": "كود الهدية",
+    "gift_theme_name": "ثيم الهدية",
+    "total_price": "السعر الإجمالي",
+    "price_name": "فئة السعر",
+    "order_code": "رقم الطلب",
+    "gift_id": "معرّف الهدية",
 }
 
 _SPECS_CACHE: dict[str, list[str]] | None = None

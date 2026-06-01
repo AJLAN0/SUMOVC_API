@@ -49,10 +49,10 @@ DEFAULT_MAPPING_SEEDS: list[dict[str, Any]] = [
     },
     {
         "event_name": "GiftCreatedEvent",
-        "template_name": "",
-        "enabled": False,
-        "description": "Gift order — configure customer template",
-        "staff_role": "product_technician",
+        "template_name": "gifft_send",
+        "enabled": True,
+        "description": "Gift WhatsApp to RecipientCustomer",
+        "staff_role": "portrait_technician",
         "staff_template_name": None,
     },
     {
@@ -72,6 +72,17 @@ def seed_event_mappings(db: Session) -> None:
             select(EventTemplateMapping).where(EventTemplateMapping.event_name == seed["event_name"])
         ).scalar_one_or_none()
         if existing:
+            # One-time upgrade: gift mapping may exist disabled with empty template
+            if (
+                seed["event_name"] == "GiftCreatedEvent"
+                and (not existing.template_name or not existing.template_name.strip())
+                and seed.get("template_name")
+            ):
+                existing.template_name = seed["template_name"]
+                existing.enabled = seed.get("enabled", existing.enabled)
+                existing.staff_role = seed.get("staff_role") or existing.staff_role
+                existing.description = seed.get("description") or existing.description
+                existing.updated_at = datetime.utcnow()
             continue
         db.add(
             EventTemplateMapping(
@@ -89,7 +100,7 @@ def seed_event_mappings(db: Session) -> None:
 def get_staff_notification_for_event(db: Session, event_name: str | None) -> tuple[str | None, str | None]:
     """
     Return (staff_role, staff_template_name) for an event.
-    Falls back to admin + admin_reservation_confirmedddd for reservation confirms.
+    Missing staff_role defaults to admin. No staff_template means no staff send.
     """
     if not event_name:
         return None, None
@@ -97,11 +108,9 @@ def get_staff_notification_for_event(db: Session, event_name: str | None) -> tup
     row = db.execute(
         select(EventTemplateMapping).where(EventTemplateMapping.event_name == event_name)
     ).scalar_one_or_none()
-    if row:
-        role = row.staff_role
-        template = row.staff_template_name
-        if role or template:
-            return role, template
+    if row and row.staff_template_name:
+        role = row.staff_role or "admin"
+        return role, row.staff_template_name
 
     if event_name in ("ReservationConfirmedEvent", "ReservationCreatedEvent"):
         return "admin", "admin_reservation_confirmedddd"

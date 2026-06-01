@@ -539,8 +539,8 @@ async def mapping_create(
         flash_error(request, "أدخل اسم الحدث واختر القالب.")
         return RedirectResponse("/dashboard/mappings", status_code=302)
 
-    role = staff_role.strip() or None
-    if role and role not in NOTIFICATION_ROLES:
+    role = staff_role.strip() or "admin"
+    if role not in NOTIFICATION_ROLES:
         flash_error(request, "دور الموظفين غير صالح.")
         return RedirectResponse("/dashboard/mappings", status_code=302)
 

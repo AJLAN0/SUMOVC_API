@@ -15,9 +15,13 @@ from app.services.rekaz import (
     build_template_parameters,
     build_text_message,
     extract_fields,
+    is_gift_event,
     map_event_to_template,
     normalize_phone,
     rekaz_start_to_utc,
+    resolve_correlation_id,
+    resolve_message_phone,
+    resolve_template_language,
 )
 from app.services.runtime_settings import get_allowed_late_minutes, get_reminder_before_minutes
 from app.services.role_recipients import get_phones_for_role
@@ -363,18 +367,13 @@ async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
         event_name = payload.get("EventName") or payload.get("eventName")
 
         # ── Extract all fields using the centralized helper ──
-        fields = extract_fields(payload)
+        fields = extract_fields(payload, event_name)
         if not fields.get("allowed_late_minutes"):
             fields["allowed_late_minutes"] = str(get_allowed_late_minutes(db))
 
-        data = payload.get("Data") or payload.get("data") or {}
-        customer = data.get("customer") or data.get("Customer") or {}
-        phone_raw = (
-            customer.get("MobileNumber")
-            or customer.get("mobileNumber")
-            or customer.get("phone")
-        )
+        phone_raw, phone_source = resolve_message_phone(payload, event_name)
         phone = normalize_phone(phone_raw)
+        correlation_id = resolve_correlation_id(fields, event_name)
 
         logger.info(
             "rekaz_payload_extracted",
@@ -384,7 +383,9 @@ async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
                     "external_event_id": external_event_id,
                     "event_name": event_name,
                     "phone_raw": phone_raw,
+                    "phone_source": phone_source,
                     "phone_normalized": phone,
+                    "correlation_id": correlation_id,
                     "fields": fields,
                 }
             },
@@ -438,13 +439,13 @@ async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
 
         # --- Determine send mode ---
         template_name = map_event_to_template(db, event_name)
-        language = settings.HATIF_TEMPLATE_LANGUAGE
+        language = resolve_template_language(payload, event_name, settings.HATIF_TEMPLATE_LANGUAGE)
         status = "failed"
         provider_response = ""
         response_json: dict = {}
         success = False
         is_duplicate = False
-        reservation_number = fields.get("reservation_number")
+        reservation_number = correlation_id or fields.get("reservation_number")
 
         if not phone:
             logger.warning(
@@ -454,6 +455,7 @@ async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
                         "request_id": request_id,
                         "external_event_id": external_event_id,
                         "phone_raw": phone_raw,
+                        "phone_source": phone_source,
                     }
                 },
             )
@@ -518,7 +520,7 @@ async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
         else:
             # --- Template mode (spec-driven) ---
 
-            # ── Idempotency: one customer message per reservation ──
+            # ── Idempotency: one message per reservation / gift / order ──
             if template_name == "reservation_confirmedddddddd" and phone:
                 if not _claim_notification_slot(reservation_number, "customer_confirmed", phone, request_id, db):
                     is_duplicate = True
@@ -528,6 +530,23 @@ async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
                             "extra": {
                                 "request_id": request_id,
                                 "reservation_number": reservation_number,
+                                "phone": phone,
+                                "event_name": event_name,
+                            }
+                        },
+                    )
+                    provider_response = format_provider_response(False, "duplicate_suppressed")
+                    status = "duplicate"
+
+            elif is_gift_event(event_name) and phone and reservation_number:
+                if not _claim_notification_slot(reservation_number, "gift_sent", phone, request_id, db):
+                    is_duplicate = True
+                    logger.info(
+                        "gift_already_sent",
+                        extra={
+                            "extra": {
+                                "request_id": request_id,
+                                "gift_id": reservation_number,
                                 "phone": phone,
                                 "event_name": event_name,
                             }
