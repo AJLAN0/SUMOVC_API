@@ -26,10 +26,16 @@ NOTIFICATION_ROLES: dict[str, dict[str, str]] = {
     },
 }
 
+DEFAULT_PORTRAIT_TECHNICIAN_PHONES = (
+    "966550556381",
+    "966583771046",
+    "966554818612",
+)
+
 DEFAULT_PRODUCT_TECHNICIAN_PHONES = (
-    "0550556381",
-    "0547537826",
-    "0557019152",
+    "966550556381",
+    "966547537826",
+    "966557019152",
 )
 
 _ROLE_CACHE: dict[str, list[str]] | None = None
@@ -109,7 +115,7 @@ def add_recipient(
 
 
 def seed_role_recipients(db: Session) -> None:
-    """Seed admin role from ADMIN_TO_NUMBERS if no recipients exist yet."""
+    """Seed role phones from env defaults and ensure technician lists exist."""
     existing = db.execute(select(RoleRecipient.id).limit(1)).scalar_one_or_none()
     if not existing:
         admin_phones = settings.admin_numbers()
@@ -122,6 +128,10 @@ def seed_role_recipients(db: Session) -> None:
                 extra={"extra": {"role": "admin", "count": len(admin_phones)}},
             )
 
+    admin_phones = tuple(settings.admin_numbers())
+    if admin_phones:
+        _ensure_role_phones(db, "admin", admin_phones)
+    _ensure_role_phones(db, "portrait_technician", DEFAULT_PORTRAIT_TECHNICIAN_PHONES)
     _ensure_role_phones(db, "product_technician", DEFAULT_PRODUCT_TECHNICIAN_PHONES)
 
 

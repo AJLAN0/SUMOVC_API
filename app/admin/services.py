@@ -28,7 +28,7 @@ DEFAULT_MAPPING_SEEDS: list[dict[str, Any]] = [
         "template_name": "reservation_confirmedddddddd",
         "enabled": True,
         "description": "Customer confirmation WhatsApp",
-        "staff_role": "admin",
+        "staff_role": "portrait_technician",
         "staff_template_name": "admin_reservation_confirmedddd",
     },
     {
@@ -44,7 +44,7 @@ DEFAULT_MAPPING_SEEDS: list[dict[str, Any]] = [
         "template_name": "reservation_confirmedddddddd",
         "enabled": False,
         "description": "Enable if Rekaz only sends Created (not Confirmed)",
-        "staff_role": "admin",
+        "staff_role": "portrait_technician",
         "staff_template_name": "admin_reservation_confirmedddd",
     },
     {
@@ -52,7 +52,7 @@ DEFAULT_MAPPING_SEEDS: list[dict[str, Any]] = [
         "template_name": "reservation_confirmedddddddd",
         "enabled": True,
         "description": "Send update template only when date/time changes (start/end/reservation_date)",
-        "staff_role": "admin",
+        "staff_role": "portrait_technician",
         "staff_template_name": "admin_reservation_confirmedddd",
     },
     {
@@ -119,6 +119,16 @@ def seed_event_mappings(db: Session) -> None:
                     existing.staff_template_name = seed["staff_template_name"]
                 existing.description = seed.get("description") or existing.description
                 existing.updated_at = datetime.utcnow()
+            elif seed["event_name"] in (
+                "ReservationConfirmedEvent",
+                "ReservationCreatedEvent",
+                "ReservationUpdatedEvent",
+            ):
+                if (existing.staff_role or "admin") == "admin" and seed.get("staff_role"):
+                    existing.staff_role = seed["staff_role"]
+                if not (existing.staff_template_name or "").strip() and seed.get("staff_template_name"):
+                    existing.staff_template_name = seed["staff_template_name"]
+                existing.updated_at = datetime.utcnow()
             continue
         db.add(
             EventTemplateMapping(
@@ -149,7 +159,7 @@ def get_staff_notification_for_event(db: Session, event_name: str | None) -> tup
         return role, row.staff_template_name
 
     if event_name in ("ReservationConfirmedEvent", "ReservationCreatedEvent", "ReservationUpdatedEvent"):
-        return "admin", "admin_reservation_confirmedddd"
+        return "portrait_technician", "admin_reservation_confirmedddd"
     return None, None
 
 
