@@ -92,9 +92,10 @@ def _claim_notification_slot(
         notification_type=notification_type,
         phone=phone,
     )
-    db.add(lock)
     try:
-        db.flush()
+        with db.begin_nested():
+            db.add(lock)
+            db.flush()
         logger.info(
             "idempotency_lock_inserted",
             extra={
@@ -108,7 +109,6 @@ def _claim_notification_slot(
         )
         return True
     except IntegrityError:
-        db.rollback()
         logger.info(
             "duplicate_suppressed",
             extra={
@@ -138,7 +138,7 @@ async def _send_staff_notifications(
 
     staff_role, staff_template = get_staff_notification_for_event(db, event_name)
     if not staff_role or not staff_template:
-        logger.debug(
+        logger.info(
             "staff_send_skipped_no_mapping",
             extra={"extra": {"request_id": request_id, "event_name": event_name}},
         )
@@ -146,13 +146,18 @@ async def _send_staff_notifications(
 
     staff_phones = get_phones_for_role(db, staff_role)
     if not staff_phones:
-        logger.debug(
+        logger.warning(
             "staff_send_skipped_no_phones",
-            extra={"extra": {"request_id": request_id, "staff_role": staff_role}},
+            extra={"extra": {"request_id": request_id, "staff_role": staff_role, "event_name": event_name}},
         )
         return
 
-    reservation_number = fields.get("reservation_number")
+    idempotency_ref = (
+        fields.get("order_code")
+        or fields.get("reservation_number")
+        or fields.get("entity_id")
+        or external_event_id
+    )
     language = "en"
     staff_params = build_template_parameters(
         staff_template,
@@ -163,7 +168,7 @@ async def _send_staff_notifications(
     notification_type = staff_notification_type(event_name, staff_role, external_event_id, payload_kind)
 
     for staff_phone in staff_phones:
-        if not _claim_notification_slot(reservation_number, notification_type, staff_phone, request_id, db):
+        if not _claim_notification_slot(idempotency_ref, notification_type, staff_phone, request_id, db):
             logger.info(
                 "staff_confirmed_already_sent",
                 extra={
@@ -171,7 +176,7 @@ async def _send_staff_notifications(
                         "request_id": request_id,
                         "staff_phone": staff_phone,
                         "staff_role": staff_role,
-                        "reservation_number": reservation_number,
+                        "idempotency_ref": idempotency_ref,
                     }
                 },
             )
@@ -475,9 +480,10 @@ async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
                             "request_id": request_id,
                             "external_event_id": external_event_id,
                             "reservation_number": fields.get("reservation_number"),
-                            "start_dt_iso": fields.get("start_dt_iso"),
-                            "end_dt_iso": fields.get("end_dt_iso"),
-                            "reservation_date": fields.get("reservation_date"),
+                            "current_schedule": schedule_snapshot(fields),
+                            "previous_schedule": schedule_snapshot(previous_fields)
+                            if previous_fields
+                            else None,
                         }
                     },
                 )
@@ -656,7 +662,9 @@ async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
 
             # ── Post-send actions (template mode only) ──
 
-            if success and not is_duplicate and schedule_changed:
+            # Staff alerts are independent of customer send success (e.g. merchandise staff
+            # should still be notified if the customer template fails).
+            if schedule_changed:
                 await _send_staff_notifications(
                     fields, event_name, external_event_id, payload_kind, request_id, db
                 )

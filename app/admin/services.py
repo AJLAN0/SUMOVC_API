@@ -73,7 +73,7 @@ DEFAULT_MAPPING_SEEDS: list[dict[str, Any]] = [
     },
     {
         "event_name": "MerchandiseOrderCompletedEvent",
-        "template_name": "product_done_clint",
+        "template_name": "product_clint_done",
         "enabled": True,
         "description": "Purchase confirmation WhatsApp to Customer",
         "staff_role": "product_technician",
@@ -113,9 +113,11 @@ def seed_event_mappings(db: Session) -> None:
             elif seed["event_name"] == "MerchandiseOrderCompletedEvent" and seed.get("template_name"):
                 if not existing.template_name or not existing.template_name.strip():
                     existing.template_name = seed["template_name"]
-                    existing.enabled = seed.get("enabled", existing.enabled)
+                elif existing.template_name == "product_done_clint":
+                    existing.template_name = seed["template_name"]
+                existing.enabled = seed.get("enabled", existing.enabled)
                 existing.staff_role = seed.get("staff_role") or existing.staff_role or "product_technician"
-                if seed.get("staff_template_name") and not (existing.staff_template_name or "").strip():
+                if seed.get("staff_template_name"):
                     existing.staff_template_name = seed["staff_template_name"]
                 existing.description = seed.get("description") or existing.description
                 existing.updated_at = datetime.utcnow()

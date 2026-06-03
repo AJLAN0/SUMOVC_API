@@ -32,7 +32,7 @@ EVENT_TEMPLATE_MAP = {
     "ReservationUpdatedEvent": "reservation_confirmedddddddd",
     "ReservationCancelledEvent": "reservation_cancelled",
     "GiftCreatedEvent": "gift_clint_send",
-    "MerchandiseOrderCompletedEvent": "product_done_clint",
+    "MerchandiseOrderCompletedEvent": "product_clint_done",
 }
 
 # Re-export payload helpers (webhook + tests)
@@ -49,6 +49,7 @@ __all__ = [
     "is_reservation_update_event",
     "load_previous_reservation_fields",
     "reservation_schedule_changed",
+    "schedule_snapshot",
     "RESERVATION_SCHEDULE_FIELD_KEYS",
     "map_event_to_template",
     "resolve_correlation_id",
@@ -122,9 +123,13 @@ TEMPLATE_PARAM_SPECS: dict[str, list[str]] = {
         "redemption_url",
     ],
 
-    # merchandise – order completed customer (1 body var)
-    "product_done_clint": [
+    # merchandise – order completed customer (1 body var — Hatif template product_clint_done)
+    "product_clint_done": [
         "product_name",       # {{1}} item / product name
+    ],
+    # legacy alias
+    "product_done_clint": [
+        "product_name",
     ],
 
     # merchandise – order completed staff (2 body vars — Hatif template product_done_admin, English)
@@ -269,6 +274,45 @@ def is_reservation_update_event(event_name: str | None) -> bool:
 RESERVATION_SCHEDULE_FIELD_KEYS = ("start_dt_iso", "end_dt_iso", "reservation_date")
 
 
+def _normalize_schedule_date(fields: dict[str, str]) -> str:
+    """Canonical YYYY-MM-DD for schedule comparison."""
+    raw = (fields.get("reservation_date") or "").strip()
+    if raw:
+        parsed = _parse_dt(raw)
+        if parsed:
+            return parsed.strftime("%Y-%m-%d")
+        if len(raw) >= 10 and raw[4] == "-" and raw[7] == "-":
+            return raw[:10]
+        return raw
+    start_utc = rekaz_start_to_utc(fields.get("start_dt_iso") or None)
+    if start_utc:
+        return start_utc.strftime("%Y-%m-%d")
+    return ""
+
+
+def _normalize_schedule_instant(fields: dict[str, str], iso_key: str) -> str:
+    """Canonical UTC wall clock YYYY-MM-DD HH:MM for schedule comparison."""
+    raw = (fields.get(iso_key) or "").strip()
+    if not raw:
+        return ""
+    dt = rekaz_start_to_utc(raw)
+    if dt:
+        return dt.strftime("%Y-%m-%d %H:%M")
+    parsed = _parse_dt(raw)
+    if parsed:
+        return parsed.strftime("%Y-%m-%d %H:%M")
+    return raw
+
+
+def schedule_snapshot(fields: dict[str, str]) -> tuple[str, str, str]:
+    """Normalized (start, end, date) tuple — ignores formatting-only differences."""
+    return (
+        _normalize_schedule_instant(fields, "start_dt_iso"),
+        _normalize_schedule_instant(fields, "end_dt_iso"),
+        _normalize_schedule_date(fields),
+    )
+
+
 def load_previous_reservation_fields(
     db: Session,
     reservation_number: str | None,
@@ -311,14 +355,26 @@ def reservation_schedule_changed(
     current_fields: dict[str, str],
     previous_fields: dict[str, str] | None,
 ) -> bool:
-    """True when start/end datetime or reservation date differs from the previous webhook."""
+    """True when start/end datetime or reservation date meaningfully differs."""
     if not previous_fields:
         return False
-    for key in RESERVATION_SCHEDULE_FIELD_KEYS:
-        cur = (current_fields.get(key) or "").strip()
-        prev = (previous_fields.get(key) or "").strip()
-        if cur != prev:
-            return True
+
+    cur = schedule_snapshot(current_fields)
+    prev = schedule_snapshot(previous_fields)
+
+    # Start time changed
+    if cur[0] != prev[0] and (cur[0] or prev[0]):
+        return True
+
+    # Reservation date changed
+    if cur[2] != prev[2] and (cur[2] or prev[2]):
+        return True
+
+    # End time changed — only when both payloads include an end time (Rekaz often
+    # adds EndDate on updates even when the booking end did not actually change).
+    if cur[1] and prev[1] and cur[1] != prev[1]:
+        return True
+
     return False
 
 
