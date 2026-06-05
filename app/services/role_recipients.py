@@ -134,6 +134,13 @@ def seed_role_recipients(db: Session) -> None:
     _ensure_role_phones(db, "portrait_technician", DEFAULT_PORTRAIT_TECHNICIAN_PHONES)
     _ensure_role_phones(db, "product_technician", DEFAULT_PRODUCT_TECHNICIAN_PHONES)
 
+    for role in NOTIFICATION_ROLES:
+        count = len(get_phones_for_role(db, role))
+        logger.info(
+            "role_recipients_ready",
+            extra={"extra": {"role": role, "enabled_phone_count": count}},
+        )
+
 
 def _ensure_role_phones(db: Session, role: str, raw_phones: tuple[str, ...]) -> None:
     """Add default phones for a role if they are not already configured."""

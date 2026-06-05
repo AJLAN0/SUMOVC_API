@@ -124,6 +124,12 @@ def _ensure_schema_upgrades() -> None:
                     "ADD COLUMN IF NOT EXISTS staff_template_name VARCHAR(100)"
                 )
             )
+            conn.execute(
+                text(
+                    "ALTER TABLE sent_notifications "
+                    "ALTER COLUMN notification_type TYPE TEXT"
+                )
+            )
             logger.info("postgres_schema_upgrades_applied")
         elif is_sqlite:
             mapping_columns = {

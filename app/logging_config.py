@@ -1,5 +1,6 @@
 import json
 import logging
+import sys
 from datetime import datetime, timezone
 from typing import Any
 
@@ -24,9 +25,17 @@ def configure_logging() -> None:
     root = logging.getLogger()
     root.setLevel(logging.INFO)
 
-    handler = logging.StreamHandler()
+    # stdout so platforms (e.g. Railway) do not treat INFO as error-level stderr output
+    handler = logging.StreamHandler(sys.stdout)
     handler.setLevel(logging.INFO)
     handler.setFormatter(JsonFormatter())
 
     root.handlers.clear()
     root.addHandler(handler)
+
+    for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+        uvicorn_logger = logging.getLogger(name)
+        uvicorn_logger.handlers.clear()
+        uvicorn_logger.addHandler(handler)
+        uvicorn_logger.setLevel(logging.INFO)
+        uvicorn_logger.propagate = False

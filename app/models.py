@@ -54,7 +54,7 @@ class SentNotification(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     reservation_number: Mapped[str] = mapped_column(String(64))
-    notification_type: Mapped[str] = mapped_column(String(64))
+    notification_type: Mapped[str] = mapped_column(Text)
     phone: Mapped[str] = mapped_column(String(32))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 

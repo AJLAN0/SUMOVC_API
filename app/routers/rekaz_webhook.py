@@ -24,6 +24,7 @@ from app.services.rekaz import (
     normalize_phone,
     rekaz_start_to_utc,
     reservation_schedule_changed,
+    schedule_snapshot,
     resolve_correlation_id,
     resolve_message_phone,
     resolve_template_language,
@@ -31,6 +32,7 @@ from app.services.rekaz import (
     should_cancel_reminders,
     should_reschedule_reminder_on_update,
     should_schedule_reminder,
+    should_send_staff_for_event,
     RESERVATION_CONFIRM_TEMPLATE,
 )
 from app.services.runtime_settings import get_allowed_late_minutes, get_reminder_before_minutes
@@ -148,9 +150,31 @@ async def _send_staff_notifications(
     if not staff_phones:
         logger.warning(
             "staff_send_skipped_no_phones",
-            extra={"extra": {"request_id": request_id, "staff_role": staff_role, "event_name": event_name}},
+            extra={
+                "extra": {
+                    "request_id": request_id,
+                    "staff_role": staff_role,
+                    "event_name": event_name,
+                    "staff_template": staff_template,
+                    "hint": f"Add enabled phones for role '{staff_role}' on /dashboard/system",
+                }
+            },
         )
         return
+
+    logger.info(
+        "staff_send_dispatching",
+        extra={
+            "extra": {
+                "request_id": request_id,
+                "event_name": event_name,
+                "staff_role": staff_role,
+                "staff_template": staff_template,
+                "phone_count": len(staff_phones),
+                "phones": staff_phones,
+            }
+        },
+    )
 
     idempotency_ref = (
         fields.get("order_code")
@@ -549,8 +573,9 @@ async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
                 provider_response = format_provider_response(False, str(exc))
 
         elif not template_name:
-            logger.warning(
-                "rekaz_webhook_unsupported_event",
+            status = "ignored_no_template"
+            logger.info(
+                "rekaz_webhook_no_template",
                 extra={
                     "extra": {
                         "request_id": request_id,
@@ -559,7 +584,7 @@ async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
                 },
             )
             provider_response = format_provider_response(
-                False, f"unsupported_event:{event_name}"
+                True, f"ignored_no_template:{event_name}"
             )
 
         else:
@@ -662,13 +687,6 @@ async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
 
             # ── Post-send actions (template mode only) ──
 
-            # Staff alerts are independent of customer send success (e.g. merchandise staff
-            # should still be notified if the customer template fails).
-            if schedule_changed:
-                await _send_staff_notifications(
-                    fields, event_name, external_event_id, payload_kind, request_id, db
-                )
-
             if should_schedule_reminder(template_name, payload_kind, event_name) and success and not is_duplicate and schedule_changed:
                 if phone:
                     if should_reschedule_reminder_on_update(event_name, payload_kind, schedule_changed):
@@ -689,6 +707,13 @@ async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
 
             elif should_cancel_reminders(template_name, payload_kind):
                 _cancel_reminders(fields, request_id, db)
+
+        # Staff alerts run for every event path (template, text, missing customer phone).
+        # Independent of customer send success — merchandise staff still notify on client failure.
+        if should_send_staff_for_event(event_name, schedule_changed):
+            await _send_staff_notifications(
+                fields, event_name, external_event_id, payload_kind, request_id, db
+            )
 
         # --- Save MessageLog (client) ---
         conversation_event_id = response_json.get("conversationeventid")

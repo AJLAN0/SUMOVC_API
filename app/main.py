@@ -66,7 +66,7 @@ logger.info(
     extra={
         "extra": {
             "send_mode": settings.HATIF_SEND_MODE,
-            "database": settings.DATABASE_URL,
+            "database": settings._mask_db_url(settings.DATABASE_URL),
             "hatif_base_url": settings.HATIF_BASE_URL,
             "admin_numbers": settings.admin_numbers(),
             "reminder_before_minutes": settings.REMINDER_BEFORE_MINUTES,

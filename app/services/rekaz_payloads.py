@@ -24,6 +24,7 @@ class PayloadKind(str, Enum):
 
 
 RESERVATION_CONFIRM_TEMPLATE = "reservation_confirmedddddddd"
+RESERVATION_UPDATE_TEMPLATE = "reservation_updated"
 RESERVATION_CANCEL_TEMPLATE = "reservation_cancelled"
 
 # Event name prefixes (Rekaz convention)
@@ -33,6 +34,14 @@ _PREFIX_MERCHANDISE = "Merchandise"
 _PREFIX_SUBSCRIPTION = "Subscription"
 
 RESERVATION_UPDATE_EVENTS = frozenset({"ReservationUpdatedEvent"})
+
+# Default staff routing when DB mapping is missing staff_template_name
+STAFF_NOTIFICATION_FALLBACKS: dict[str, tuple[str, str]] = {
+    "ReservationConfirmedEvent": ("portrait_technician", "admin_reservation_confirmedddd"),
+    "ReservationCreatedEvent": ("portrait_technician", "admin_reservation_confirmedddd"),
+    "ReservationUpdatedEvent": ("portrait_technician", "admin_reservation_confirmedddd"),
+    "MerchandiseOrderCompletedEvent": ("product_technician", "product_done_admin"),
+}
 
 
 def _ci(d: dict | None, *keys: str):
@@ -201,13 +210,27 @@ def should_schedule_reminder(
 ) -> bool:
     if kind != PayloadKind.RESERVATION:
         return False
-    if template_name != RESERVATION_CONFIRM_TEMPLATE:
+    if event_name in ("ReservationCancelledEvent",):
         return False
-    return event_name not in ("ReservationCancelledEvent",)
+    if template_name == RESERVATION_CONFIRM_TEMPLATE:
+        return True
+    if template_name == RESERVATION_UPDATE_TEMPLATE and event_name in RESERVATION_UPDATE_EVENTS:
+        return True
+    return False
 
 
 def should_cancel_reminders(template_name: str | None, kind: PayloadKind) -> bool:
     return kind == PayloadKind.RESERVATION and template_name == RESERVATION_CANCEL_TEMPLATE
+
+
+def should_send_staff_for_event(
+    event_name: str | None,
+    schedule_changed: bool,
+) -> bool:
+    """Staff alerts follow customer send rules for reservation updates."""
+    if event_name in RESERVATION_UPDATE_EVENTS:
+        return schedule_changed
+    return bool(event_name)
 
 
 def should_reschedule_reminder_on_update(

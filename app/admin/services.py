@@ -17,6 +17,7 @@ from app.models import (
 )
 from app.admin.errors import explain_error, humanize_error
 from app.services.rekaz import EVENT_TEMPLATE_MAP
+from app.services.rekaz_payloads import STAFF_NOTIFICATION_FALLBACKS
 
 _MAPPING_CACHE: dict[str, str | None] | None = None
 _MAPPING_CACHE_AT: float = 0.0
@@ -49,7 +50,7 @@ DEFAULT_MAPPING_SEEDS: list[dict[str, Any]] = [
     },
     {
         "event_name": "ReservationUpdatedEvent",
-        "template_name": "reservation_confirmedddddddd",
+        "template_name": "reservation_updated",
         "enabled": True,
         "description": "Send update template only when date/time changes (start/end/reservation_date)",
         "staff_role": "portrait_technician",
@@ -116,15 +117,26 @@ def seed_event_mappings(db: Session) -> None:
                 elif existing.template_name == "product_done_clint":
                     existing.template_name = seed["template_name"]
                 existing.enabled = seed.get("enabled", existing.enabled)
-                existing.staff_role = seed.get("staff_role") or existing.staff_role or "product_technician"
-                if seed.get("staff_template_name"):
+                if (existing.staff_role or "admin") == "admin" and seed.get("staff_role"):
+                    existing.staff_role = seed["staff_role"]
+                elif not (existing.staff_role or "").strip() and seed.get("staff_role"):
+                    existing.staff_role = seed["staff_role"]
+                if not (existing.staff_template_name or "").strip() and seed.get("staff_template_name"):
+                    existing.staff_template_name = seed["staff_template_name"]
+                existing.description = seed.get("description") or existing.description
+                existing.updated_at = datetime.utcnow()
+            elif seed["event_name"] == "ReservationUpdatedEvent":
+                if existing.template_name == "reservation_confirmedddddddd" and seed.get("template_name"):
+                    existing.template_name = seed["template_name"]
+                if (existing.staff_role or "admin") == "admin" and seed.get("staff_role"):
+                    existing.staff_role = seed["staff_role"]
+                if not (existing.staff_template_name or "").strip() and seed.get("staff_template_name"):
                     existing.staff_template_name = seed["staff_template_name"]
                 existing.description = seed.get("description") or existing.description
                 existing.updated_at = datetime.utcnow()
             elif seed["event_name"] in (
                 "ReservationConfirmedEvent",
                 "ReservationCreatedEvent",
-                "ReservationUpdatedEvent",
             ):
                 if (existing.staff_role or "admin") == "admin" and seed.get("staff_role"):
                     existing.staff_role = seed["staff_role"]
@@ -148,7 +160,7 @@ def seed_event_mappings(db: Session) -> None:
 def get_staff_notification_for_event(db: Session, event_name: str | None) -> tuple[str | None, str | None]:
     """
     Return (staff_role, staff_template_name) for an event.
-    Missing staff_role defaults to admin. No staff_template means no staff send.
+    Dashboard mapping wins; otherwise use STAFF_NOTIFICATION_FALLBACKS.
     """
     if not event_name:
         return None, None
@@ -156,13 +168,11 @@ def get_staff_notification_for_event(db: Session, event_name: str | None) -> tup
     row = db.execute(
         select(EventTemplateMapping).where(EventTemplateMapping.event_name == event_name)
     ).scalar_one_or_none()
-    if row and row.staff_template_name:
+    if row and (row.staff_template_name or "").strip():
         role = row.staff_role or "admin"
-        return role, row.staff_template_name
+        return role, row.staff_template_name.strip()
 
-    if event_name in ("ReservationConfirmedEvent", "ReservationCreatedEvent", "ReservationUpdatedEvent"):
-        return "portrait_technician", "admin_reservation_confirmedddd"
-    return None, None
+    return STAFF_NOTIFICATION_FALLBACKS.get(event_name)
 
 
 def invalidate_mapping_cache() -> None:

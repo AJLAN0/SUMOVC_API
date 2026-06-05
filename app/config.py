@@ -118,6 +118,15 @@ class Settings:
 
     def log_summary(self) -> None:
         """Log a safe summary of loaded settings (secrets masked)."""
+        if not self.HATIF_WEBHOOK_SECRET:
+            logger.warning(
+                "hatif_webhook_secret_empty",
+                extra={
+                    "extra": {
+                        "hint": "Set HATIF_WEBHOOK_SECRET to validate Hatif webhook signatures",
+                    }
+                },
+            )
         logger.info(
             "settings_loaded",
             extra={
@@ -133,7 +142,7 @@ class Settings:
                     "HATIF_SEND_MODE": self.HATIF_SEND_MODE,
                     "HATIF_TEMPLATE_LANGUAGE": self.HATIF_TEMPLATE_LANGUAGE,
                     "EMPTY_PARAM_PLACEHOLDER": self.EMPTY_PARAM_PLACEHOLDER,
-                    "DATABASE_URL": self.DATABASE_URL,
+                    "DATABASE_URL": self._mask_db_url(self.DATABASE_URL),
                     "ADMIN_TO_NUMBERS": self.ADMIN_TO_NUMBERS or "(none)",
                     "REMINDER_BEFORE_MINUTES": self.REMINDER_BEFORE_MINUTES,
                     "ALLOWED_LATE_MINUTES": self.ALLOWED_LATE_MINUTES,
