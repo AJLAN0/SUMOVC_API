@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import page_header, badge_status, status_ar, empty_row, error_brief %}
+{% from "_macros.html" import page_header, badge_status, status_ar, empty_row, error_brief, time_group_header, table_datetime %}
 {% block title %}التذكيرات — SUMO{% endblock %}
 {% block content %}
 {{ page_header('التذكيرات المجدولة', 'جدولة رسائل واتساب قبل موعد الحجز — اختر القالب واملأ الحقول بسهولة') }}
@@ -59,7 +59,7 @@
       </form>
       <p style="color: var(--text-dim); font-size: 0.85rem; margin: 1rem 0 0;">
         يُرسل التذكير قبل الموعد بعدد الدقائق المحدّد في
-        <a href="/dashboard/system">إعدادات النظام</a>
+        <a href="/dashboard/system" class="link-inline">إعدادات النظام</a>
         (<strong class="ltr" dir="ltr">{{ reminder_before_minutes }}</strong> دقيقة).
       </p>
       <a href="/dashboard/templates" class="btn btn-ghost btn-sm" style="margin-top: 1rem;">إدارة قوالب واتساب</a>
@@ -81,9 +81,11 @@
         </tr>
       </thead>
       <tbody>
-        {% for j in items %}
+        {% for group_label, group_date, group_rows in grouped_items %}
+        {{ time_group_header(group_label, 6, group_date) }}
+        {% for j in group_rows %}
         <tr id="row-{{ j.id }}">
-          <td class="ltr" style="color: var(--text-muted);">{{ j.run_at.strftime('%Y-%m-%d %H:%M') if j.run_at else '—' }}</td>
+          {{ table_datetime(j.run_at) }}
           <td class="ltr">{{ j.to_phone }}</td>
           <td>
             <span class="ltr font-mono" dir="ltr" style="font-size: 0.75rem;">{{ j.template_name }}</span>
@@ -100,13 +102,16 @@
             </div>
             {% endif %}
           </td>
-          <td style="white-space: nowrap;">
-            <button hx-post="/admin/api/scheduled/{{ j.id }}/retry" hx-swap="none" onclick="location.reload()" class="btn-link">إعادة</button>
-            <button hx-post="/admin/api/scheduled/{{ j.id }}/cancel" hx-swap="none" onclick="location.reload()" class="btn-link" style="color: var(--text-muted);">إلغاء</button>
-            <button hx-delete="/admin/api/scheduled/{{ j.id }}" hx-target="#row-{{ j.id }}" hx-swap="outerHTML"
-              hx-confirm="حذف هذا التذكير؟" class="btn btn-danger btn-sm">حذف</button>
+          <td>
+            <div class="table-actions">
+              <button hx-post="/admin/api/scheduled/{{ j.id }}/retry" hx-swap="none" onclick="location.reload()" class="btn-link">إعادة</button>
+              <button hx-post="/admin/api/scheduled/{{ j.id }}/cancel" hx-swap="none" onclick="location.reload()" class="btn-link btn-link--muted">إلغاء</button>
+              <button hx-delete="/admin/api/scheduled/{{ j.id }}" hx-target="#row-{{ j.id }}" hx-swap="outerHTML"
+                hx-confirm="حذف هذا التذكير؟" class="btn btn-danger btn-sm">حذف</button>
+            </div>
           </td>
         </tr>
+        {% endfor %}
         {% else %}
         {{ empty_row(6, 'لا توجد تذكيرات مجدولة') }}
         {% endfor %}

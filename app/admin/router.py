@@ -24,6 +24,7 @@ from app.admin.activity_logs import (
     get_activity_stats,
 )
 from app.admin.deps import render_admin
+from app.admin.time_groups import coerce_datetime, group_rows_by_time
 from app.admin.errors import explain_error, validate_phone
 from app.admin.flash import flash_error, flash_success, flash_warning
 from app.admin.rekaz_ui import (
@@ -149,10 +150,23 @@ async def dashboard_page(
     if redir := _auth_or_redirect(auth):
         return redir
     stats = get_dashboard_stats(db)
+    grouped_recent_success = group_rows_by_time(
+        stats.get("recent_success") or [],
+        get_dt=lambda m: coerce_datetime(m.get("at")),
+    )
+    grouped_recent_failures = group_rows_by_time(
+        stats.get("recent_failures") or [],
+        get_dt=lambda f: coerce_datetime(f.get("at")),
+    )
     return render_admin(
         request,
         "dashboard.html",
-        {"stats": stats, "active": "dashboard"},
+        {
+            "stats": stats,
+            "active": "dashboard",
+            "grouped_recent_success": grouped_recent_success,
+            "grouped_recent_failures": grouped_recent_failures,
+        },
     )
 
 
@@ -193,12 +207,14 @@ async def activity_logs_page(
     kind_options = [{"value": "all", "label": "كل الأنواع"}] + [
         {"value": k.value, "label": PAYLOAD_KIND_LABELS_AR[k]} for k in PAYLOAD_KIND_ORDER if k.value != "unknown"
     ]
+    grouped_items = group_rows_by_time(result["items"], get_dt=lambda i: i.get("at"))
     return render_admin(
         request,
         "logs.html",
         {
             "active": "logs",
             "items": result["items"],
+            "grouped_items": grouped_items,
             "total": result["total"],
             "page": result["page"],
             "page_size": result["page_size"],
@@ -251,12 +267,14 @@ async def events_page(
         }
         for ev in items
     ]
+    grouped_event_rows = group_rows_by_time(event_rows, get_dt=lambda r: r["event"].created_at)
     return render_admin(
         request,
         "events.html",
         {
             "active": "events",
             "event_rows": event_rows,
+            "grouped_event_rows": grouped_event_rows,
             "items": items,
             "page": page,
             "page_size": page_size,
@@ -321,12 +339,14 @@ async def messages_page(
     stmt = stmt.order_by(MessageLog.created_at.desc())
     total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
     items = db.execute(stmt.offset((page - 1) * page_size).limit(page_size)).scalars().all()
+    grouped_items = group_rows_by_time(items, get_dt=lambda m: m.created_at)
     return render_admin(
         request,
         "messages.html",
         {
             "active": "messages",
             "items": items,
+            "grouped_items": grouped_items,
             "page": page,
             "page_size": page_size,
             "total": total,
@@ -373,12 +393,14 @@ async def scheduled_page(
     stmt = stmt.order_by(ScheduledMessage.run_at.desc())
     total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
     items = db.execute(stmt.offset((page - 1) * page_size).limit(page_size)).scalars().all()
+    grouped_items = group_rows_by_time(items, get_dt=lambda j: j.run_at)
     return render_admin(
         request,
         "scheduled.html",
         {
             "active": "scheduled",
             "items": items,
+            "grouped_items": grouped_items,
             "page": page,
             "total": total,
             "status": status or "",
@@ -686,10 +708,17 @@ async def locks_page(
     stmt = select(SentNotification).order_by(SentNotification.created_at.desc())
     total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
     items = db.execute(stmt.offset((page - 1) * page_size).limit(page_size)).scalars().all()
+    grouped_items = group_rows_by_time(items, get_dt=lambda lock: lock.created_at)
     return render_admin(
         request,
         "locks.html",
-        {"active": "locks", "items": items, "page": page, "total": total},
+        {
+            "active": "locks",
+            "items": items,
+            "grouped_items": grouped_items,
+            "page": page,
+            "total": total,
+        },
     )
 
 

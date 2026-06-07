@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import page_header, empty_row %}
+{% from "_macros.html" import page_header, empty_row, time_group_header, table_datetime %}
 {% block title %}أحداث ركاز — SUMO{% endblock %}
 {% block content %}
 {{ page_header('أحداث ركاز', 'للمطور — حمولة الويبهوك الكاملة كما وردت من ركاز') }}
@@ -27,7 +27,7 @@
     <table class="data-table">
       <thead>
         <tr>
-          <th>الوقت</th>
+          <th style="width: 6rem;">التاريخ</th>
           <th>النوع</th>
           <th>حدث ركاز</th>
           <th>المعرّف</th>
@@ -36,12 +36,14 @@
         </tr>
       </thead>
       <tbody id="events-body">
-        {% for row in event_rows %}
+        {% for group_label, group_date, group_rows in grouped_event_rows %}
+        {{ time_group_header(group_label, 6, group_date) }}
+        {% for row in group_rows %}
         {% set ev = row.event %}
         <tr id="row-{{ ev.id }}">
-          <td class="ltr" style="color: var(--text-muted);">{{ ev.created_at.strftime('%Y-%m-%d %H:%M') if ev.created_at else '—' }}</td>
+          {{ table_datetime(ev.created_at) }}
           <td><span class="badge badge-muted">{{ row.kind_label }}</span></td>
-          <td><a href="/dashboard/events/{{ ev.id }}" class="btn-link ltr font-mono">{{ ev.event_name }}</a></td>
+          <td><a href="/dashboard/events/{{ ev.id }}" class="table-link ltr font-mono" dir="ltr">{{ ev.event_name }}</a></td>
           <td class="ltr font-mono" style="font-size: 0.8rem;">{{ ev.external_event_id or '—' }}</td>
           <td class="ltr">{{ ev.phone or '—' }}</td>
           <td>
@@ -49,6 +51,7 @@
               hx-confirm="هل تريد حذف هذا الحدث؟" class="btn btn-danger btn-sm">حذف</button>
           </td>
         </tr>
+        {% endfor %}
         {% else %}
         {{ empty_row(6) }}
         {% endfor %}

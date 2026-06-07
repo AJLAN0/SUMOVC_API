@@ -66,10 +66,12 @@
               </button>
             </form>
           </td>
-          <td style="white-space: nowrap;">
-            <a href="/dashboard/mappings/{{ m.id }}/edit" class="btn-link">تعديل</a>
-            <button hx-delete="/admin/api/mappings/{{ m.id }}" hx-target="#row-{{ m.id }}" hx-swap="outerHTML"
-              hx-confirm="حذف ربط «{{ m.event_name }}»؟" class="btn btn-danger btn-sm" style="margin-right: 0.5rem;">حذف</button>
+          <td>
+            <div class="table-actions">
+              <a href="/dashboard/mappings/{{ m.id }}/edit" class="btn-link">تعديل</a>
+              <button hx-delete="/admin/api/mappings/{{ m.id }}" hx-target="#row-{{ m.id }}" hx-swap="outerHTML"
+                hx-confirm="حذف ربط «{{ m.event_name }}»؟" class="btn btn-danger btn-sm">حذف</button>
+            </div>
           </td>
         </tr>
         {% else %}
@@ -133,9 +135,9 @@
       </label>
       <button type="submit" class="btn btn-primary">إضافة الربط</button>
     </form>
-    <p style="font-size: 0.8rem; color: var(--text-dim); margin: 1rem 0 0;">
-      <a href="/dashboard/templates">قوالب واتساب</a> ·
-      <a href="/dashboard/system">أرقام المستلمين</a>
+    <p class="link-group" style="font-size: 0.85rem; margin: 1rem 0 0;">
+      <a href="/dashboard/templates" class="link-inline">قوالب واتساب</a>
+      <a href="/dashboard/system" class="link-inline">أرقام المستلمين</a>
     </p>
   </div>
 </details>

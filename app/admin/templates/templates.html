@@ -127,7 +127,7 @@
           <td>{% if t.enabled %}<span class="badge badge-success">نعم</span>{% else %}<span class="badge badge-muted">لا</span>{% endif %}</td>
           <td style="white-space: nowrap;">
             {% if t.id %}
-            <a href="/dashboard/templates/{{ t.id }}/edit" class="btn-link">تعديل</a>
+            <div class="table-actions"><a href="/dashboard/templates/{{ t.id }}/edit" class="btn-link">تعديل</a></div>
             <button hx-delete="/admin/api/templates/{{ t.id }}" hx-target="#row-tpl-{{ t.id }}" hx-swap="outerHTML"
               hx-confirm="حذف هذا القالب؟" class="btn btn-danger btn-sm">حذف</button>
             {% else %}

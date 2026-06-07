@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import page_header, empty_row %}
+{% from "_macros.html" import page_header, empty_row, time_group_header, table_datetime %}
 {% block title %}قفل التكرار — SUMO{% endblock %}
 {% block content %}
 {{ page_header('قفل التكرار', 'يمنع إرسال نفس الإشعار مرتين لنفس الحجز') }}
@@ -13,7 +13,7 @@
     <table class="data-table">
       <thead>
         <tr>
-          <th>الوقت</th>
+          <th style="width: 6rem;">التاريخ</th>
           <th>رقم الحجز</th>
           <th>نوع الإشعار</th>
           <th>الجوال</th>
@@ -21,9 +21,11 @@
         </tr>
       </thead>
       <tbody>
-        {% for lock in items %}
+        {% for group_label, group_date, group_rows in grouped_items %}
+        {{ time_group_header(group_label, 5, group_date) }}
+        {% for lock in group_rows %}
         <tr id="row-{{ lock.id }}">
-          <td class="ltr" style="color: var(--text-muted);">{{ lock.created_at.strftime('%Y-%m-%d %H:%M') if lock.created_at else '—' }}</td>
+          {{ table_datetime(lock.created_at) }}
           <td class="ltr">{{ lock.reservation_number }}</td>
           <td class="ltr font-mono" style="font-size: 0.8rem;">{{ lock.notification_type }}</td>
           <td class="ltr">{{ lock.phone }}</td>
@@ -32,6 +34,7 @@
               hx-confirm="إزالة القفل؟ قد تُرسل رسالة مكررة للعميل." class="btn btn-danger btn-sm">إزالة القفل</button>
           </td>
         </tr>
+        {% endfor %}
         {% else %}
         {{ empty_row(5, 'لا توجد أقفال') }}
         {% endfor %}

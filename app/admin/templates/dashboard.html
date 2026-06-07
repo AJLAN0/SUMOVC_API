@@ -1,29 +1,33 @@
 {% extends "base.html" %}
-{% from "_macros.html" import page_header, stat_card, health_card, badge_status %}
+{% from "_macros.html" import page_header, stat_card, health_card, badge_status, time_group_header, table_datetime_iso %}
 {% block title %}نظرة عامة — SUMO{% endblock %}
 {% block content %}
 {{ page_header('نظرة عامة', 'متابعة رسائل واتساب وربط الأحداث') }}
 
-<div class="quick-action-grid">
-  <a href="/dashboard/mappings" class="quick-action-card quick-action-primary">
-    <span class="quick-action-icon">🔗</span>
-    <strong>ربط الأحداث</strong>
-    <span>حدد قالب واتساب لكل حدث ركاز</span>
+<div class="stat-grid home-shortcuts">
+  <a href="/dashboard/mappings" class="stat-card-link">
+    <div class="stat-card" style="--stat-accent: var(--accent);">
+      <div class="label">ربط الأحداث</div>
+      <p class="shortcut-desc">حدد قالب واتساب لكل حدث ركاز</p>
+    </div>
   </a>
-  <a href="/dashboard/templates#test-send" class="quick-action-card">
-    <span class="quick-action-icon">📤</span>
-    <strong>إرسال تجريبي</strong>
-    <span>اختبر قالب قبل التفعيل</span>
+  <a href="/dashboard/templates#test-send" class="stat-card-link">
+    <div class="stat-card" style="--stat-accent: #a78bfa;">
+      <div class="label">إرسال تجريبي</div>
+      <p class="shortcut-desc">اختبر قالب قبل التفعيل</p>
+    </div>
   </a>
-  <a href="/dashboard/system" class="quick-action-card">
-    <span class="quick-action-icon">📱</span>
-    <strong>أرقام المستلمين</strong>
-    <span>فريق بورتريه · منتجات · مشرف</span>
+  <a href="/dashboard/system" class="stat-card-link">
+    <div class="stat-card" style="--stat-accent: #60a5fa;">
+      <div class="label">أرقام المستلمين</div>
+      <p class="shortcut-desc">فريق بورتريه · منتجات · مشرف</p>
+    </div>
   </a>
-  <a href="/dashboard/messages" class="quick-action-card">
-    <span class="quick-action-icon">💬</span>
-    <strong>سجل الرسائل</strong>
-    <span>كل ما أُرسل عبر هاتف</span>
+  <a href="/dashboard/messages" class="stat-card-link">
+    <div class="stat-card" style="--stat-accent: #34d399;">
+      <div class="label">سجل الرسائل</div>
+      <p class="shortcut-desc">كل ما أُرسل عبر هاتف</p>
+    </div>
   </a>
 </div>
 
@@ -83,14 +87,15 @@
           <tr>
             <td class="ltr font-mono" style="font-size: 0.8rem;">{{ m.event_name }}</td>
             <td class="ltr font-mono" style="font-size: 0.78rem; color: var(--text-muted);">{{ m.template_name }}</td>
-            <td><a href="/dashboard/mappings/{{ m.id }}/edit" class="btn-link">تعديل</a></td>
+            <td><div class="table-actions"><a href="/dashboard/mappings/{{ m.id }}/edit" class="btn-link">تعديل</a></div></td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
       {% if stats.mappings_enabled > stats.active_mappings | length %}
       <p style="padding: 0.75rem 1rem; margin: 0; font-size: 0.85rem; color: var(--text-dim);">
-        +{{ stats.mappings_enabled - stats.active_mappings | length }} ربط آخر — <a href="/dashboard/mappings">عرض الكل</a>
+        +{{ stats.mappings_enabled - stats.active_mappings | length }} ربط آخر —
+        <a href="/dashboard/mappings" class="link-inline">عرض الكل</a>
       </p>
       {% endif %}
       {% else %}
@@ -112,18 +117,21 @@
       <table class="data-table" style="margin: 0;">
         <thead>
           <tr>
-            <th>الوقت</th>
+            <th style="width: 6rem;">التاريخ</th>
             <th>القالب</th>
             <th>الجوال</th>
           </tr>
         </thead>
         <tbody>
-          {% for m in stats.recent_success %}
+          {% for group_label, group_date, group_rows in grouped_recent_success %}
+          {{ time_group_header(group_label, 3, group_date) }}
+          {% for m in group_rows %}
           <tr>
-            <td class="ltr" style="font-size: 0.8rem; color: var(--text-muted);">{{ m.at[11:16] if m.at else '—' }}</td>
+            {{ table_datetime_iso(m.at) }}
             <td class="ltr font-mono" style="font-size: 0.75rem;">{{ m.template_name or '—' }}</td>
             <td class="ltr" style="font-size: 0.85rem;">{{ m.phone or '—' }}</td>
           </tr>
+          {% endfor %}
           {% endfor %}
         </tbody>
       </table>
@@ -145,17 +153,19 @@
       <thead>
         <tr>
           <th>النوع</th>
-          <th>الوقت</th>
+          <th style="width: 6rem;">التاريخ</th>
           <th>القالب / الجوال</th>
           <th>السبب</th>
           <th></th>
         </tr>
       </thead>
       <tbody>
-        {% for f in stats.recent_failures %}
+        {% for group_label, group_date, group_rows in grouped_recent_failures %}
+        {{ time_group_header(group_label, 5, group_date) }}
+        {% for f in group_rows %}
         <tr>
           <td>{% if f.kind == 'message' %}رسالة{% else %}تذكير{% endif %}</td>
-          <td class="ltr" style="font-size: 0.8rem; color: var(--text-muted);">{{ f.at[:16] if f.at else '—' }}</td>
+          {{ table_datetime_iso(f.at) }}
           <td>
             <span class="ltr font-mono" style="font-size: 0.75rem;">{{ f.template_name or '—' }}</span><br>
             <span class="ltr" style="font-size: 0.85rem;">{{ f.phone or '—' }}</span>
@@ -164,8 +174,9 @@
             <strong style="color: var(--danger);">{{ f.title }}</strong>
             <p style="margin: 0.2rem 0 0; color: var(--text-muted);">{{ f.message }}</p>
           </td>
-          <td><a href="{{ f.url }}" class="btn-link">عرض</a></td>
+          <td><div class="table-actions"><a href="{{ f.url }}" class="btn-link">عرض</a></div></td>
         </tr>
+        {% endfor %}
         {% endfor %}
       </tbody>
     </table>
@@ -182,18 +193,24 @@
     <p style="color: var(--text-muted); font-size: 0.9rem; margin: 0 0 1rem;">
       سجلات تقنية لتشخيص المشاكل — أحداث ركاز الخام، النشاط الكامل، قفل التكرار.
     </p>
-    <div class="quick-action-grid" style="margin-bottom: 1.5rem;">
-      <a href="/dashboard/logs" class="quick-action-card quick-action-dev">
-        <strong>سجل النشاط</strong>
-        <span>كل العمليات في مكان واحد</span>
+    <div class="stat-grid" style="margin-bottom: 1.5rem; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));">
+      <a href="/dashboard/logs" class="stat-card-link">
+        <div class="stat-card" style="--stat-accent: #94a3b8;">
+          <div class="label">سجل النشاط</div>
+          <p class="shortcut-desc">كل العمليات في مكان واحد</p>
+        </div>
       </a>
-      <a href="/dashboard/events" class="quick-action-card quick-action-dev">
-        <strong>أحداث ركاز</strong>
-        <span>حمولة الويبهوك الكاملة</span>
+      <a href="/dashboard/events" class="stat-card-link">
+        <div class="stat-card" style="--stat-accent: #94a3b8;">
+          <div class="label">أحداث ركاز</div>
+          <p class="shortcut-desc">حمولة الويبهوك الكاملة</p>
+        </div>
       </a>
-      <a href="/dashboard/locks" class="quick-action-card quick-action-dev">
-        <strong>قفل التكرار</strong>
-        <span>منع إرسال مكرر</span>
+      <a href="/dashboard/locks" class="stat-card-link">
+        <div class="stat-card" style="--stat-accent: #94a3b8;">
+          <div class="label">قفل التكرار</div>
+          <p class="shortcut-desc">منع إرسال مكرر</p>
+        </div>
       </a>
     </div>
     <div class="split-layout">

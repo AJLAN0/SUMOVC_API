@@ -43,6 +43,37 @@
 <tr><td colspan="{{ colspan }}"><div class="empty-state"><div class="icon">📭</div>{{ message }}</div></td></tr>
 {% endmacro %}
 
+{% macro time_group_header(label, colspan, date='') %}
+<tr class="time-group-header">
+  <td colspan="{{ colspan }}">
+    <span class="time-group-label">{{ label }}</span>
+    {% if date %}<span class="time-group-date">{{ date }}</span>{% endif %}
+  </td>
+</tr>
+{% endmacro %}
+
+{% macro table_datetime(dt, data_label='') %}
+<td class="table-datetime ltr" dir="ltr"{% if data_label %} data-label="{{ data_label }}"{% endif %}>
+  {% if not dt %}
+  <span class="table-datetime__empty">—</span>
+  {% else %}
+  <span class="table-datetime__date">{{ dt.strftime('%Y-%m-%d') }}</span>
+  <span class="table-datetime__time">{{ dt.strftime('%H:%M') }}</span>
+  {% endif %}
+</td>
+{% endmacro %}
+
+{% macro table_datetime_iso(iso) %}
+<td class="table-datetime ltr" dir="ltr">
+  {% if not iso %}
+  <span class="table-datetime__empty">—</span>
+  {% else %}
+  <span class="table-datetime__date">{{ iso[:10] }}</span>
+  <span class="table-datetime__time">{{ iso[11:16] }}</span>
+  {% endif %}
+</td>
+{% endmacro %}
+
 {% macro pagination_bar(page, page_size, total, has_more, query='') %}
 {% if total > page_size %}
 <div class="pagination">

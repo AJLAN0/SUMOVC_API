@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import page_header, empty_row, stat_card, log_type_badge, log_status_badge, log_desc_cell %}
+{% from "_macros.html" import page_header, empty_row, stat_card, log_type_badge, log_status_badge, log_desc_cell, time_group_header, table_datetime %}
 {% block title %}سجل النشاط — SUMO{% endblock %}
 {% block content %}
 {{ page_header('سجل النشاط', 'للمطور — كل العمليات في مكان واحد: ويبهوك · رسائل · تذكيرات · قفل التكرار') }}
@@ -76,7 +76,7 @@
     <table class="data-table log-table">
       <thead>
         <tr>
-          <th style="width: 130px;">الوقت</th>
+          <th style="width: 6rem;">التاريخ</th>
           <th style="width: 110px;">النوع</th>
           <th>ماذا حدث</th>
           <th style="width: 130px;">الجوال</th>
@@ -86,9 +86,11 @@
         </tr>
       </thead>
       <tbody>
-        {% for item in items %}
+        {% for group_label, group_date, group_rows in grouped_items %}
+        {{ time_group_header(group_label, 7, group_date) }}
+        {% for item in group_rows %}
         <tr class="log-row log-row--{{ item.log_type }}" id="log-{{ item.log_type }}-{{ item.id }}">
-          <td class="log-time ltr" data-label="الوقت">{{ item.at.strftime('%Y-%m-%d') if item.at else '—' }}<br><span>{{ item.at.strftime('%H:%M') if item.at else '' }}</span></td>
+          {{ table_datetime(item.at, 'التاريخ') }}
           <td data-label="النوع">{{ log_type_badge(item.log_type, item.log_type_label) }}</td>
           <td data-label="ماذا حدث">{{ log_desc_cell(item) }}</td>
           <td class="ltr" data-label="الجوال">{{ item.phone or '—' }}</td>
@@ -104,9 +106,10 @@
             {% endif %}
           </td>
           <td style="white-space: nowrap;" data-label="إجراء">
-            <a href="{{ item.detail_url }}" class="btn-link">عرض</a>
+            <div class="table-actions"><a href="{{ item.detail_url }}" class="btn-link">عرض</a></div>
           </td>
         </tr>
+        {% endfor %}
         {% else %}
         {{ empty_row(7, 'لا توجد سجلات مطابقة — جرّب مسح التصفية أو تغيير نوع السجل') }}
         {% endfor %}
