@@ -301,12 +301,14 @@ async def messages_page(
     auth: str | RedirectResponse = Depends(require_admin_page),
     db: Session = Depends(get_db),
     page: int = 1,
+    page_size: int = 50,
     status: str | None = None,
     phone: str | None = None,
 ):
     if redir := _auth_or_redirect(auth):
         return redir
-    page_size = 25
+    page = max(1, page)
+    page_size = min(max(page_size, 10), 200)
     stmt = select(MessageLog)
     if status:
         stmt = stmt.where(MessageLog.status == status)
@@ -322,7 +324,9 @@ async def messages_page(
             "active": "messages",
             "items": items,
             "page": page,
+            "page_size": page_size,
             "total": total,
+            "has_more": page * page_size < total,
             "status": status or "",
             "phone": phone or "",
         },

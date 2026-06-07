@@ -8,6 +8,7 @@
   {%- elif s == 'canceled' -%}ملغى
   {%- elif s == 'skipped' -%}تم التخطي
   {%- elif s == 'duplicate' -%}مكرر
+  {%- elif s == 'ignored_no_template' -%}بدون قالب
   {%- else -%}{{ s }}
   {%- endif -%}
 {%- endmacro %}
@@ -40,6 +41,20 @@
 
 {% macro empty_row(colspan, message='لا توجد بيانات') %}
 <tr><td colspan="{{ colspan }}"><div class="empty-state"><div class="icon">📭</div>{{ message }}</div></td></tr>
+{% endmacro %}
+
+{% macro pagination_bar(page, page_size, total, has_more, query='') %}
+{% if total > page_size %}
+<div class="pagination">
+  {% if page > 1 %}
+  <a href="?page={{ page - 1 }}&page_size={{ page_size }}{{ query }}">→ السابق</a>
+  {% endif %}
+  <span style="color: var(--text-muted);">صفحة {{ page }} — {{ total }} سجل</span>
+  {% if has_more %}
+  <a href="?page={{ page + 1 }}&page_size={{ page_size }}{{ query }}">التالي ←</a>
+  {% endif %}
+</div>
+{% endif %}
 {% endmacro %}
 
 {% macro flash_messages(flashes) %}

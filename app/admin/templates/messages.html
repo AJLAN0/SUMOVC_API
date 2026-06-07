@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import page_header, badge_status, empty_row %}
+{% from "_macros.html" import page_header, badge_status, empty_row, pagination_bar %}
 {% block title %}سجل الرسائل — SUMO{% endblock %}
 {% block content %}
 {{ page_header('سجل رسائل واتساب', 'كل محاولات الإرسال عبر هاتف — حالة التسليم والقوالب') }}
@@ -11,14 +11,33 @@
       <option value="">الكل</option>
       <option value="success" {% if status == 'success' %}selected{% endif %}>نجح</option>
       <option value="failed" {% if status == 'failed' %}selected{% endif %}>فشل</option>
+      <option value="duplicate" {% if status == 'duplicate' %}selected{% endif %}>مكرر</option>
+      <option value="skipped" {% if status == 'skipped' %}selected{% endif %}>تم التخطي</option>
+      <option value="ignored_no_template" {% if status == 'ignored_no_template' %}selected{% endif %}>بدون قالب</option>
     </select>
   </div>
   <div class="form-group" style="margin: 0; min-width: 160px;">
     <label class="form-label">الجوال</label>
     <input name="phone" value="{{ phone }}" class="form-input ltr" dir="ltr" placeholder="9665..." />
   </div>
+  <div class="form-group" style="margin: 0;">
+    <label class="form-label">عدد الصفوف</label>
+    <select name="page_size" class="form-select">
+      <option value="25" {% if page_size == 25 %}selected{% endif %}>25</option>
+      <option value="50" {% if page_size == 50 %}selected{% endif %}>50</option>
+      <option value="100" {% if page_size == 100 %}selected{% endif %}>100</option>
+      <option value="200" {% if page_size == 200 %}selected{% endif %}>200</option>
+    </select>
+  </div>
   <button type="submit" class="btn btn-primary" style="align-self: flex-end;">تصفية</button>
 </form>
+
+<p style="color: var(--text-muted); font-size: 0.9rem; margin: 0 0 1rem;">
+  إجمالي السجلات: <strong style="color: var(--text);">{{ total }}</strong>
+  {% if total > 0 %}
+  — عرض {{ ((page - 1) * page_size) + 1 }}–{{ [page * page_size, total] | min }} (الأحدث أولاً)
+  {% endif %}
+</p>
 
 <div class="card">
   <div class="table-wrap">
@@ -47,6 +66,8 @@
             {% set ex = m.error_reason | explain_error %}
             <span style="color: var(--danger);">{{ ex.title }}</span>
             <span style="color: var(--text-muted); display: block;">{{ ex.message }}</span>
+            {% elif m.provider_response %}
+            <span style="color: var(--text-muted);">{{ m.provider_response[:120] }}{% if m.provider_response|length > 120 %}…{% endif %}</span>
             {% else %}—{% endif %}
           </td>
           <td style="white-space: nowrap;">
@@ -62,4 +83,7 @@
     </table>
   </div>
 </div>
+
+{% set query = '&status=' ~ status ~ '&phone=' ~ phone %}
+{{ pagination_bar(page, page_size, total, has_more, query) }}
 {% endblock %}
