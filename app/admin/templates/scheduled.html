@@ -1,122 +1,265 @@
 {% extends "base.html" %}
-{% from "_macros.html" import page_header, badge_status, status_ar, empty_row, error_brief, time_group_header, table_datetime %}
+{% from "_macros.html" import page_header, badge_status, status_ar, empty_row, error_brief, pagination_bar, table_datetime %}
 {% block title %}التذكيرات — SUMO{% endblock %}
 {% block content %}
-{{ page_header('التذكيرات المجدولة', 'جدولة رسائل واتساب قبل موعد الحجز — اختر القالب واملأ الحقول بسهولة') }}
+{{ page_header('التذكيرات', 'عدّ تنازلي لكل حجز — الأقرب للإرسال في الأعلى') }}
 
-<div class="split-layout" style="margin-bottom: 2rem;">
-  <div class="card">
-    <div class="card-header"><h3>جدولة تذكير جديد</h3></div>
-    <div class="card-body">
-      <form method="post" action="/dashboard/scheduled/create" id="schedule-form">
-        <div class="form-group">
-          <label class="form-label">رقم الجوال</label>
-          <input name="to_phone" required placeholder="9665XXXXXXXX" class="form-input ltr" dir="ltr" />
-        </div>
-        <div class="form-group">
-          <label class="form-label">قالب واتساب</label>
-          <select name="template_name" required class="form-select"
-            hx-get="/dashboard/partials/template-fields"
-            hx-target="#param-fields"
-            hx-trigger="change"
-            hx-include="#schedule-form">
-            <option value="">— اختر قالباً —</option>
-            {% for t in templates %}
-            <option value="{{ t.name }}">{{ t.title_ar }} ({{ t.name }})</option>
-            {% endfor %}
-          </select>
-        </div>
-
-        <div id="param-fields" style="margin: 1rem 0;">
-          <p style="color: var(--text-dim); font-size: 0.9rem;">اختر قالباً لعرض حقول الرسالة</p>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">وقت الإرسال</label>
-          <input name="run_at" type="datetime-local" required class="form-input ltr" dir="ltr" />
-        </div>
-        <div class="form-group">
-          <label class="form-label">رقم الحجز (اختياري)</label>
-          <input name="reservation_number" placeholder="10969071" class="form-input ltr" dir="ltr" />
-        </div>
-        <button type="submit" class="btn btn-primary" style="width: 100%;">جدولة التذكير</button>
-      </form>
-    </div>
-  </div>
-  <div class="card">
-    <div class="card-header"><h3>تصفية القائمة</h3></div>
-    <div class="card-body">
-      <form method="get">
-        <div class="form-group">
-          <label class="form-label">حالة التذكير</label>
-          <select name="status" onchange="this.form.submit()" class="form-select">
-            <option value="">الكل</option>
-            {% for s in ['pending','sent','failed','canceled'] %}
-            <option value="{{ s }}" {% if status == s %}selected{% endif %}>{{ status_ar(s) }}</option>
-            {% endfor %}
-          </select>
-        </div>
-      </form>
-      <p style="color: var(--text-dim); font-size: 0.85rem; margin: 1rem 0 0;">
-        يُرسل التذكير قبل الموعد بعدد الدقائق المحدّد في
-        <a href="/dashboard/system" class="link-inline">إعدادات النظام</a>
-        (<strong class="ltr" dir="ltr">{{ reminder_before_minutes }}</strong> دقيقة).
-      </p>
-      <a href="/dashboard/templates" class="btn btn-ghost btn-sm" style="margin-top: 1rem;">إدارة قوالب واتساب</a>
-    </div>
-  </div>
+<div class="reminder-tabs">
+  <a href="/dashboard/scheduled?status=pending" class="reminder-tab {% if status == 'pending' or not status %}reminder-tab--active{% endif %}">
+    قادمة <span class="reminder-tab__count">{{ pending_count }}</span>
+  </a>
+  <a href="/dashboard/scheduled?status=sent" class="reminder-tab {% if status == 'sent' %}reminder-tab--active{% endif %}">مُرسلة</a>
+  <a href="/dashboard/scheduled?status=failed" class="reminder-tab {% if status == 'failed' %}reminder-tab--active{% endif %}">فاشلة</a>
+  <a href="/dashboard/scheduled?status=canceled" class="reminder-tab {% if status == 'canceled' %}reminder-tab--active{% endif %}">ملغاة</a>
 </div>
 
-<div class="card">
+{% if show_queue %}
+<div class="reminder-summary">
+  <div class="reminder-summary__stat">
+    <span class="reminder-summary__label">في الانتظار</span>
+    <strong class="reminder-summary__value">{{ pending_count }}</strong>
+  </div>
+  {% if overdue_count > 0 %}
+  <div class="reminder-summary__stat reminder-summary__stat--danger">
+    <span class="reminder-summary__label">متأخرة</span>
+    <strong class="reminder-summary__value">{{ overdue_count }}</strong>
+  </div>
+  {% endif %}
+  <p class="reminder-summary__hint">
+    يُجدول التذكير تلقائياً قبل الموعد بـ
+    <strong class="ltr" dir="ltr">{{ reminder_before_minutes }}</strong> دقيقة —
+    <a href="/dashboard/system" class="link-inline">الإعدادات</a>
+    · {{ display_tz_label }}
+  </p>
+</div>
+
+{% if next_row %}
+<div class="reminder-hero">
+  <div class="reminder-hero__badge">التالي</div>
+  <div class="reminder-countdown reminder-countdown--hero" data-run-at="{{ next_row.run_at_iso }}">
+    <span class="reminder-countdown__digits ltr" dir="ltr">--:--:--</span>
+    <span class="reminder-countdown__caption">متبقٍ للإرسال</span>
+  </div>
+  <div class="reminder-hero__meta">
+    <div>
+      <span class="reminder-meta__label">رقم الحجز</span>
+      <strong class="ltr font-mono" dir="ltr">{{ next_row.reservation_number }}</strong>
+    </div>
+    <div>
+      <span class="reminder-meta__label">الجوال</span>
+      <strong class="ltr" dir="ltr">{{ next_row.to_phone }}</strong>
+    </div>
+    <div>
+      <span class="reminder-meta__label">موعد الإرسال</span>
+      <strong class="ltr" dir="ltr">{{ next_row.run_at_date }} {{ next_row.run_at_time_sec }}</strong>
+    </div>
+    {% if next_row.customer_hint %}
+    <div>
+      <span class="reminder-meta__label">العميل</span>
+      <strong>{{ next_row.customer_hint }}</strong>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+<div class="reminder-queue">
+  {% for row in pending_rows %}
+  <article class="reminder-card {% if row.is_next %}reminder-card--next{% endif %} {% if row.is_overdue %}reminder-card--overdue{% endif %}" id="row-{{ row.job.id }}">
+    <div class="reminder-card__rank ltr" dir="ltr">#{{ row.rank }}</div>
+    <div class="reminder-countdown" data-run-at="{{ row.run_at_iso }}">
+      <span class="reminder-countdown__digits ltr" dir="ltr">--:--:--</span>
+      <span class="reminder-countdown__caption">{% if row.is_overdue %}متأخر{% else %}متبقٍ{% endif %}</span>
+    </div>
+    <div class="reminder-card__body">
+      <div class="reminder-card__head">
+        <span class="ltr font-mono" dir="ltr" style="font-size: 0.82rem;">{{ row.template_name }}</span>
+        {{ badge_status(row.job.status) }}
+      </div>
+      <dl class="reminder-card__facts">
+        <div>
+          <dt>الحجز</dt>
+          <dd class="ltr font-mono" dir="ltr">{{ row.reservation_number }}</dd>
+        </div>
+        <div>
+          <dt>الجوال</dt>
+          <dd class="ltr" dir="ltr">
+            {% if row.to_phone %}
+            <a href="/dashboard/clients/{{ row.to_phone }}" class="link-inline">{{ row.to_phone }}</a>
+            {% else %}—{% endif %}
+          </dd>
+        </div>
+        <div>
+          <dt>الإرسال</dt>
+          <dd class="ltr" dir="ltr">{{ row.run_at_date }} {{ row.run_at_time }}</dd>
+        </div>
+        {% if row.customer_hint %}
+        <div>
+          <dt>العميل</dt>
+          <dd>{{ row.customer_hint }}</dd>
+        </div>
+        {% endif %}
+      </dl>
+      {% if row.job.last_error and row.job.status == 'failed' %}
+      <div class="error-brief" style="margin-top: 0.5rem;">
+        {% set ex = row.job.last_error | explain_error %}
+        <span class="error-brief-title">{{ ex.title }}</span>
+        <span class="error-brief-msg">{{ ex.message }}</span>
+      </div>
+      {% endif %}
+    </div>
+    <div class="reminder-card__actions">
+      <div class="table-actions">
+        <button hx-post="/admin/api/scheduled/{{ row.job.id }}/retry" hx-swap="none" onclick="location.reload()" class="btn-link">إعادة</button>
+        <button hx-post="/admin/api/scheduled/{{ row.job.id }}/cancel" hx-swap="none" onclick="location.reload()" class="btn-link btn-link--muted">إلغاء</button>
+        <button hx-delete="/admin/api/scheduled/{{ row.job.id }}" hx-target="#row-{{ row.job.id }}" hx-swap="outerHTML"
+          hx-confirm="حذف هذا التذكير؟" class="btn btn-danger btn-sm">حذف</button>
+      </div>
+    </div>
+  </article>
+  {% else %}
+  <div class="empty-state" style="padding: 2.5rem;">لا توجد تذكيرات قادمة</div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if show_history and status != 'pending' %}
+<div class="card" style="margin-top: 2rem;">
+  <div class="card-header">
+    <h3>{% if status %}تذكيرات {{ status_ar(status) }}{% else %}أرشيف التذكيرات{% endif %}</h3>
+    {% if history_total %}<span class="badge badge-muted">{{ history_total }}</span>{% endif %}
+  </div>
   <div class="table-wrap">
     <table class="data-table">
       <thead>
         <tr>
-          <th>وقت الإرسال</th>
+          <th style="width: 6rem;">التاريخ</th>
+          <th>الحجز</th>
           <th>الجوال</th>
           <th>القالب</th>
           <th>الحالة</th>
-          <th>المحاولات</th>
           <th>إجراءات</th>
         </tr>
       </thead>
       <tbody>
-        {% for group_label, group_date, group_rows in grouped_items %}
-        {{ time_group_header(group_label, 6, group_date) }}
-        {% for j in group_rows %}
+        {% for j in history_items %}
         <tr id="row-{{ j.id }}">
           {{ table_datetime(j.run_at) }}
+          <td class="ltr font-mono" dir="ltr">{{ j.reservation_number or '—' }}</td>
           <td class="ltr">{{ j.to_phone }}</td>
-          <td>
-            <span class="ltr font-mono" dir="ltr" style="font-size: 0.75rem;">{{ j.template_name }}</span>
-          </td>
+          <td><span class="ltr font-mono" dir="ltr" style="font-size: 0.75rem;">{{ j.template_name }}</span></td>
           <td>{{ badge_status(j.status) }}</td>
           <td>
-            {{ j.attempts }}
-            {% if j.last_error and j.status == 'failed' %}
-            <div class="error-brief" style="margin-top: 0.35rem;">
-              {% set ex = j.last_error | explain_error %}
-              <span class="error-brief-title">{{ ex.title }}</span>
-              <span class="error-brief-msg">{{ ex.message }}</span>
-              {% if ex.hint %}<span class="error-brief-hint">{{ ex.hint }}</span>{% endif %}
-            </div>
-            {% endif %}
-          </td>
-          <td>
             <div class="table-actions">
+              {% if j.status == 'failed' %}
               <button hx-post="/admin/api/scheduled/{{ j.id }}/retry" hx-swap="none" onclick="location.reload()" class="btn-link">إعادة</button>
-              <button hx-post="/admin/api/scheduled/{{ j.id }}/cancel" hx-swap="none" onclick="location.reload()" class="btn-link btn-link--muted">إلغاء</button>
+              {% endif %}
               <button hx-delete="/admin/api/scheduled/{{ j.id }}" hx-target="#row-{{ j.id }}" hx-swap="outerHTML"
                 hx-confirm="حذف هذا التذكير؟" class="btn btn-danger btn-sm">حذف</button>
             </div>
           </td>
         </tr>
-        {% endfor %}
         {% else %}
-        {{ empty_row(6, 'لا توجد تذكيرات مجدولة') }}
+        {{ empty_row(6, 'لا توجد تذكيرات في هذا القسم') }}
         {% endfor %}
       </tbody>
     </table>
   </div>
+  {% if history_total > page_size %}
+  {{ pagination_bar(page, page_size, history_total, has_more_history, '&status=' ~ status) }}
+  {% endif %}
 </div>
+{% endif %}
+
+<details class="card" style="margin-top: 2rem;">
+  <summary class="card-header" style="cursor: pointer;">
+    <h3 style="display: inline;">جدولة تذكير يدوي</h3>
+  </summary>
+  <div class="card-body split-layout">
+    <form method="post" action="/dashboard/scheduled/create" id="schedule-form" style="max-width: 420px;">
+      <div class="form-group">
+        <label class="form-label">رقم الجوال</label>
+        <input name="to_phone" required placeholder="9665XXXXXXXX" class="form-input ltr" dir="ltr" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">قالب واتساب</label>
+        <select name="template_name" required class="form-select"
+          hx-get="/dashboard/partials/template-fields"
+          hx-target="#param-fields"
+          hx-trigger="change"
+          hx-include="#schedule-form">
+          <option value="">— اختر قالباً —</option>
+          {% for t in templates %}
+          <option value="{{ t.name }}">{{ t.title_ar }} ({{ t.name }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div id="param-fields" style="margin: 1rem 0;">
+        <p style="color: var(--text-dim); font-size: 0.9rem;">اختر قالباً لعرض حقول الرسالة</p>
+      </div>
+      <div class="form-group">
+        <label class="form-label">وقت الإرسال ({{ display_tz_label }})</label>
+        <input name="run_at" type="datetime-local" required class="form-input ltr" dir="ltr" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">رقم الحجز (اختياري)</label>
+        <input name="reservation_number" placeholder="10969071" class="form-input ltr" dir="ltr" />
+      </div>
+      <button type="submit" class="btn btn-primary">جدولة التذكير</button>
+    </form>
+    <div>
+      <p style="color: var(--text-muted); font-size: 0.9rem; margin: 0 0 1rem;">
+        معظم التذكيرات تُنشأ تلقائياً عند تأكيد الحجز. استخدم هذا النموذج للجدولة اليدوية أو الاختبار.
+      </p>
+      <a href="/dashboard/templates" class="btn btn-ghost btn-sm">إدارة قوالب واتساب</a>
+    </div>
+  </div>
+</details>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  function pad(n) { return String(n).padStart(2, '0'); }
+
+  function formatDuration(ms) {
+    const totalSec = Math.floor(ms / 1000);
+    const days = Math.floor(totalSec / 86400);
+    const hours = Math.floor((totalSec % 86400) / 3600);
+    const mins = Math.floor((totalSec % 3600) / 60);
+    const secs = totalSec % 60;
+    const clock = pad(hours) + ':' + pad(mins) + ':' + pad(secs);
+    if (days > 0) return days + 'd ' + clock;
+    return clock;
+  }
+
+  function tickCountdown(el) {
+    const iso = el.getAttribute('data-run-at');
+    if (!iso) return;
+    const target = Date.parse(iso);
+    const diff = target - Date.now();
+    const digits = el.querySelector('.reminder-countdown__digits');
+    const caption = el.querySelector('.reminder-countdown__caption');
+    if (!digits) return;
+
+    if (diff <= 0) {
+      digits.textContent = formatDuration(Math.abs(diff));
+      el.classList.add('reminder-countdown--late');
+      if (caption) caption.textContent = 'متأخر';
+      return;
+    }
+
+    el.classList.remove('reminder-countdown--late');
+    digits.textContent = formatDuration(diff);
+    if (caption && !caption.dataset.fixed) caption.textContent = 'متبقٍ للإرسال';
+  }
+
+  function tickAll() {
+    document.querySelectorAll('.reminder-countdown[data-run-at]').forEach(tickCountdown);
+  }
+
+  tickAll();
+  setInterval(tickAll, 1000);
+})();
+</script>
 {% endblock %}

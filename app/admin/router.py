@@ -25,6 +25,7 @@ from app.admin.activity_logs import (
     get_activity_stats,
 )
 from app.admin.datetime_ui import DISPLAY_TZ_LABEL_AR, format_riyadh_date, format_riyadh_time
+from app.admin.scheduled_ui import get_scheduled_page_data
 from app.admin.deps import render_admin
 from app.admin.time_groups import coerce_datetime, group_rows_by_time
 from app.admin.errors import explain_error, validate_phone
@@ -441,26 +442,16 @@ async def scheduled_page(
 ):
     if redir := _auth_or_redirect(auth):
         return redir
-    page_size = 25
-    stmt = select(ScheduledMessage)
-    if status:
-        stmt = stmt.where(ScheduledMessage.status == status)
-    stmt = stmt.order_by(ScheduledMessage.run_at.desc())
-    total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
-    items = db.execute(stmt.offset((page - 1) * page_size).limit(page_size)).scalars().all()
-    grouped_items = group_rows_by_time(items, get_dt=lambda j: j.run_at)
+    page_data = get_scheduled_page_data(db, status=status, page=page)
     return render_admin(
         request,
         "scheduled.html",
         {
             "active": "scheduled",
-            "items": items,
-            "grouped_items": grouped_items,
-            "page": page,
-            "total": total,
-            "status": status or "",
             "templates": list_enabled_templates(db),
             "reminder_before_minutes": get_runtime_settings_view(db)["reminder_before_minutes"]["value"],
+            "display_tz_label": DISPLAY_TZ_LABEL_AR,
+            **page_data,
         },
     )
 
