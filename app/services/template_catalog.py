@@ -20,14 +20,6 @@ DEFAULT_TEMPLATE_SPECS: dict[str, list[str]] = {
         "end_time",
         "branch_name",
     ],
-    "reservation_updated": [
-        "customer_name",
-        "product_name",
-        "reservation_date",
-        "start_time",
-        "end_time",
-        "branch_name",
-    ],
     "reservation_reminderrrr": ["customer_name", "branch_name"],
     "reservation_cancelled": ["customer_name", "cancel_reason"],
     "admin_reservation_confirmedddd": [
@@ -76,10 +68,6 @@ def default_language_for_template(template_name: str) -> str:
 
 DEFAULT_TEMPLATE_META: dict[str, dict[str, str]] = {
     "reservation_confirmedddddddd": {"title_ar": "تأكيد الحجز للعميل", "description": "رسالة تأكيد الحجز"},
-    "reservation_updated": {
-        "title_ar": "تحديث موعد الحجز للعميل",
-        "description": "رسالة تحديث الموعد — التاريخ والوقت والفرع",
-    },
     "reservation_reminderrrr": {"title_ar": "تذكير بالموعد", "description": "تذكير قبل الموعد"},
     "reservation_cancelled": {"title_ar": "إلغاء الحجز", "description": "رسالة إلغاء"},
     "admin_reservation_confirmedddd": {

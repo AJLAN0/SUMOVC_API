@@ -24,7 +24,6 @@ class PayloadKind(str, Enum):
 
 
 RESERVATION_CONFIRM_TEMPLATE = "reservation_confirmedddddddd"
-RESERVATION_UPDATE_TEMPLATE = "reservation_updated"
 RESERVATION_CANCEL_TEMPLATE = "reservation_cancelled"
 
 # Event name prefixes (Rekaz convention)
@@ -212,11 +211,7 @@ def should_schedule_reminder(
         return False
     if event_name in ("ReservationCancelledEvent",):
         return False
-    if template_name == RESERVATION_CONFIRM_TEMPLATE:
-        return True
-    if template_name == RESERVATION_UPDATE_TEMPLATE and event_name in RESERVATION_UPDATE_EVENTS:
-        return True
-    return False
+    return template_name == RESERVATION_CONFIRM_TEMPLATE
 
 
 def should_cancel_reminders(template_name: str | None, kind: PayloadKind) -> bool:

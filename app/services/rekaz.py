@@ -30,7 +30,7 @@ _RIYADH = timezone(timedelta(hours=3))
 # ── Event → Template mapping ───────────────────────────────────────────
 EVENT_TEMPLATE_MAP = {
     "ReservationConfirmedEvent": "reservation_confirmedddddddd",
-    "ReservationUpdatedEvent": "reservation_updated",
+    "ReservationUpdatedEvent": "reservation_confirmedddddddd",
     "ReservationCancelledEvent": "reservation_cancelled",
     "GiftCreatedEvent": "gift_clint_send",
     "MerchandiseOrderCompletedEvent": "product_clint_done",
@@ -72,16 +72,6 @@ __all__ = [
 TEMPLATE_PARAM_SPECS: dict[str, list[str]] = {
     # client – confirmed  (6 body vars, TEXT title — no header image)
     "reservation_confirmedddddddd": [
-        "customer_name",      # {{1}}
-        "product_name",       # {{2}}
-        "reservation_date",   # {{3}}
-        "start_time",         # {{4}}
-        "end_time",           # {{5}}
-        "branch_name",        # {{6}}
-    ],
-
-    # client – updated reservation (6 body vars — same shape as confirmed)
-    "reservation_updated": [
         "customer_name",      # {{1}}
         "product_name",       # {{2}}
         "reservation_date",   # {{3}}

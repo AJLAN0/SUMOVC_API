@@ -50,9 +50,9 @@ DEFAULT_MAPPING_SEEDS: list[dict[str, Any]] = [
     },
     {
         "event_name": "ReservationUpdatedEvent",
-        "template_name": "reservation_updated",
+        "template_name": "reservation_confirmedddddddd",
         "enabled": True,
-        "description": "Send update template only when date/time changes (start/end/reservation_date)",
+        "description": "Same confirm template — resend customer & staff only when date/time changes",
         "staff_role": "portrait_technician",
         "staff_template_name": "admin_reservation_confirmedddd",
     },
@@ -126,7 +126,7 @@ def seed_event_mappings(db: Session) -> None:
                 existing.description = seed.get("description") or existing.description
                 existing.updated_at = datetime.utcnow()
             elif seed["event_name"] == "ReservationUpdatedEvent":
-                if existing.template_name == "reservation_confirmedddddddd" and seed.get("template_name"):
+                if (existing.template_name or "").strip() in ("", "reservation_updated"):
                     existing.template_name = seed["template_name"]
                 if (existing.staff_role or "admin") == "admin" and seed.get("staff_role"):
                     existing.staff_role = seed["staff_role"]
