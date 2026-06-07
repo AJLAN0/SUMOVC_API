@@ -40,6 +40,8 @@ from app.admin.rekaz_ui import (
 from app.admin.services import DEFAULT_MAPPING_SEEDS, _EXTRA_EVENT_SEEDS, get_dashboard_stats, probe_database
 from app.config import settings
 from app.database import get_db
+from app.services.hatif import format_provider_response, send_whatsapp_template
+from app.services.rekaz import normalize_phone
 from app.models import (
     EventTemplateMapping,
     MessageLog,
@@ -50,9 +52,11 @@ from app.models import (
     WhatsAppTemplate,
 )
 from app.services.template_catalog import (
+    ENGLISH_TEMPLATE_NAMES,
     PARAM_LABELS_AR,
     _parse_param_keys,
     build_params_from_form,
+    default_language_for_template,
     get_spec_for_template,
     invalidate_template_cache,
     list_all_templates,
@@ -402,7 +406,9 @@ async def template_fields_partial(
             "template_name": name,
             "spec": spec,
             "param_labels": PARAM_LABELS_AR,
-            "default_placeholder": "-",
+            "default_placeholder": settings.EMPTY_PARAM_PLACEHOLDER,
+            "suggested_language": default_language_for_template(name) if name else "ar",
+            "english_templates": ENGLISH_TEMPLATE_NAMES,
         },
     )
 
@@ -471,18 +477,105 @@ async def templates_page(
 ):
     if redir := _auth_or_redirect(auth):
         return redir
+    all_templates = list_all_templates(db)
+    test_templates = [t for t in all_templates if t.get("enabled")] or all_templates
     return render_admin(
         request,
         "templates.html",
         {
             "active": "templates",
-            "items": list_all_templates(db),
+            "items": all_templates,
+            "test_templates": test_templates,
             "param_labels": PARAM_LABELS_AR,
             "fields_by_kind": FIELDS_BY_KIND,
             "kind_labels": PAYLOAD_KIND_LABELS_AR,
             "kind_order": PAYLOAD_KIND_ORDER,
+            "default_template_language": settings.HATIF_TEMPLATE_LANGUAGE,
+            "english_templates": ENGLISH_TEMPLATE_NAMES,
         },
     )
+
+
+@router.post("/dashboard/templates/test-send", response_class=HTMLResponse)
+async def templates_test_send(
+    request: Request,
+    auth: str | RedirectResponse = Depends(require_admin_page),
+    db: Session = Depends(get_db),
+):
+    if redir := _auth_or_redirect(auth):
+        return redir
+
+    form = await request.form()
+    to_phone_raw = str(form.get("to_phone", "")).strip()
+    template_name = str(form.get("template_name", "")).strip()
+    language = str(form.get("language", "ar") or "ar").strip().lower()[:2]
+
+    if phone_err := validate_phone(to_phone_raw):
+        flash_error(request, phone_err, hint="مثال: 966583771046")
+        return RedirectResponse("/dashboard/templates#test-send", status_code=302)
+    if not template_name:
+        flash_error(request, "اختر قالب واتساب للاختبار.")
+        return RedirectResponse("/dashboard/templates#test-send", status_code=302)
+
+    to_phone = normalize_phone(to_phone_raw)
+    if not to_phone:
+        flash_error(request, "تعذّر تطبيع رقم الجوال.")
+        return RedirectResponse("/dashboard/templates#test-send", status_code=302)
+
+    spec = get_spec_for_template(db, template_name)
+    if not spec:
+        flash_warning(
+            request,
+            f"القالب «{template_name}» بدون متغيرات معرّفة — سيُرسل بدون حقول.",
+            hint="عرّف المتغيرات في جدول القوالب أدناه.",
+        )
+
+    params = build_params_from_form(spec, dict(form), placeholder=settings.EMPTY_PARAM_PLACEHOLDER)
+    if spec and len(params) != len(spec):
+        flash_error(
+            request,
+            "عدد الحقول لا يطابق القالب.",
+            hint=f"متوقع {len(spec)} حقول، تم جمع {len(params)}.",
+        )
+        return RedirectResponse("/dashboard/templates#test-send", status_code=302)
+
+    try:
+        success, response_body, response_json = await send_whatsapp_template(
+            template_name,
+            to_phone,
+            params,
+            language=language,
+        )
+    except Exception as exc:
+        flash_error(request, "فشل الاتصال بـ هاتف.", hint=str(exc)[:200])
+        return RedirectResponse("/dashboard/templates#test-send", status_code=302)
+
+    provider_response = format_provider_response(success, response_body)
+    message_log = MessageLog(
+        phone=to_phone,
+        template_name=template_name,
+        status="success" if success else "failed",
+        provider_response=provider_response,
+        conversation_event_id=response_json.get("conversationeventid"),
+        contact_id=response_json.get("contactid"),
+        channel_id=settings.HATIF_CHANNEL_ID or None,
+        last_status=response_json.get("status"),
+        error_reason=response_json.get("message") if not success else None,
+    )
+    db.add(message_log)
+    db.commit()
+
+    if success:
+        flash_success(
+            request,
+            f"تم إرسال القالب «{template_name}» إلى {to_phone}.",
+            hint=f"راجع السجل: /dashboard/messages/{message_log.id}",
+        )
+    else:
+        ex = explain_error(response_body or response_json.get("message") or "فشل الإرسال")
+        flash_error(request, ex["message"], hint=ex.get("hint"), title=ex.get("title"))
+
+    return RedirectResponse("/dashboard/templates#test-send", status_code=302)
 
 
 @router.post("/dashboard/templates/create", response_class=HTMLResponse)

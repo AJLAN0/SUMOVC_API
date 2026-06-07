@@ -63,6 +63,17 @@ DEFAULT_TEMPLATE_SPECS: dict[str, list[str]] = {
     "product_done_admin": ["customer_name", "product_name"],
 }
 
+# Hatif templates registered in English (staff / admin alerts)
+ENGLISH_TEMPLATE_NAMES = frozenset({
+    "admin_reservation_confirmedddd",
+    "product_done_admin",
+})
+
+
+def default_language_for_template(template_name: str) -> str:
+    return "en" if template_name in ENGLISH_TEMPLATE_NAMES else "ar"
+
+
 DEFAULT_TEMPLATE_META: dict[str, dict[str, str]] = {
     "reservation_confirmedddddddd": {"title_ar": "تأكيد الحجز للعميل", "description": "رسالة تأكيد الحجز"},
     "reservation_updated": {

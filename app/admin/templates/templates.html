@@ -8,6 +8,50 @@
   <strong>مهم:</strong> اسم القالب يجب أن يطابق الاسم المعرّف في هاتف (Voxa) حرفياً. ترتيب المتغيرات أدناه يطابق {{1}}، {{2}} في القالب.
 </div>
 
+<div class="card" id="test-send" style="margin-bottom: 2rem;">
+  <div class="card-header"><h3>إرسال تجريبي للقالب</h3></div>
+  <div class="card-body">
+    <p style="color: var(--text-muted); font-size: 0.9rem; margin: 0 0 1rem;">
+      اختر قالباً، املأ المتغيرات، وأرسل فوراً إلى رقمك للتأكد من إعداد هاتف قبل ربط الأحداث.
+    </p>
+    <form method="post" action="/dashboard/templates/test-send" id="test-send-form">
+      <div class="split-layout" style="gap: 1rem; align-items: start;">
+        <div>
+          <div class="form-group">
+            <label class="form-label">رقم الجوال (للاختبار)</label>
+            <input name="to_phone" required placeholder="9665XXXXXXXX" class="form-input ltr" dir="ltr" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">قالب واتساب</label>
+            <select name="template_name" required class="form-select" id="test-template-select"
+              hx-get="/dashboard/partials/template-fields"
+              hx-target="#test-param-fields"
+              hx-trigger="change"
+              hx-include="#test-send-form">
+              <option value="">— اختر قالباً —</option>
+              {% for t in test_templates %}
+              <option value="{{ t.name }}">{{ t.title_ar }} ({{ t.name }})</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">لغة القالب في هاتف</label>
+            <select name="language" id="test-language-select" class="form-select ltr" dir="ltr">
+              <option value="ar" {% if default_template_language == 'ar' %}selected{% endif %}>ar — عربي</option>
+              <option value="en" {% if default_template_language == 'en' %}selected{% endif %}>en — English</option>
+            </select>
+          </div>
+          <button type="submit" class="btn btn-primary">إرسال الآن</button>
+          <a href="/dashboard/messages" class="btn btn-ghost" style="margin-right: 0.5rem;">سجل الرسائل</a>
+        </div>
+        <div id="test-param-fields" style="flex: 1; min-width: 260px;">
+          <p style="color: var(--text-dim); font-size: 0.9rem; margin: 0;">اختر قالباً لعرض حقول الرسالة</p>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
 <div class="split-layout" style="margin-bottom: 2rem;">
   <div class="card">
     <div class="card-header"><h3>إضافة قالب جديد</h3></div>
@@ -98,4 +142,16 @@
     </table>
   </div>
 </div>
+{% endblock %}
+{% block scripts %}
+<script>
+  document.body.addEventListener('htmx:afterSwap', function(evt) {
+    if (evt.detail.target.id !== 'test-param-fields') return;
+    var suggested = evt.detail.target.querySelector('input[name="suggested_language"]');
+    var langSelect = document.getElementById('test-language-select');
+    if (suggested && langSelect) {
+      langSelect.value = suggested.value || 'ar';
+    }
+  });
+</script>
 {% endblock %}

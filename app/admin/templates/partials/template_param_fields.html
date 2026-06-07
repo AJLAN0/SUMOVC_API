@@ -20,7 +20,13 @@
   </div>
   {% endfor %}
   <p style="margin: 0.75rem 0 0; font-size: 0.8rem; color: var(--text-dim);">
-    ترتيب الحقول يطابق ترتيب متغيرات القالب في هاتف ({{1}}، {{2}}، …). الحقول الفارغة تُستبدل بـ «-» تلقائياً.
+    ترتيب الحقول يطابق ترتيب متغيرات القالب في هاتف ({{1}}، {{2}}، …). الحقول الفارغة تُستبدل بـ «{{ default_placeholder }}» تلقائياً.
   </p>
+  {% if template_name in english_templates %}
+  <p style="margin: 0.5rem 0 0; font-size: 0.8rem; color: var(--warning, #fbbf24);">
+    هذا قالب فريق — اختر لغة <strong class="ltr" dir="ltr">English (en)</strong> في النموذج.
+  </p>
+  {% endif %}
+  <input type="hidden" name="suggested_language" value="{{ suggested_language }}" />
 </div>
 {% endif %}
