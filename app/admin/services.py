@@ -15,6 +15,7 @@ from app.models import (
     SentNotification,
     WebhookEvent,
 )
+from app.admin.datetime_ui import riyadh_today_start_utc_naive, to_riyadh
 from app.admin.errors import explain_error, humanize_error
 from app.services.rekaz import EVENT_TEMPLATE_MAP
 from app.services.rekaz_payloads import STAFF_NOTIFICATION_FALLBACKS
@@ -207,7 +208,7 @@ def resolve_template_for_event(db: Session, event_name: str | None) -> str | Non
 
 
 def _today_start() -> datetime:
-    return datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    return riyadh_today_start_utc_naive()
 
 
 def _reservation_from_payload(payload_json: str) -> str | None:
@@ -275,7 +276,8 @@ def get_dashboard_stats(db: Session) -> dict[str, Any]:
     for created_at in events_24h:
         if not created_at:
             continue
-        hour_key = created_at.strftime("%Y-%m-%d %H:00")
+        local = to_riyadh(created_at)
+        hour_key = local.strftime("%Y-%m-%d %H:00") if local else created_at.strftime("%Y-%m-%d %H:00")
         hour_totals[hour_key] = hour_totals.get(hour_key, 0) + 1
     chart_labels = sorted(hour_totals.keys())[-24:]
     chart_counts = [hour_totals[k] for k in chart_labels]

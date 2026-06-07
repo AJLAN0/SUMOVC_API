@@ -128,6 +128,14 @@ body {
   flex-shrink: 0;
 }
 
+.sidebar-tz-note {
+  margin: 0.75rem 1rem 0;
+  font-size: 0.68rem;
+  color: var(--text-dim);
+  text-align: center;
+  opacity: 0.85;
+}
+
 .main-content {
   flex: 1;
   padding: 2rem 2.5rem;

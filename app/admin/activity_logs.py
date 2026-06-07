@@ -10,6 +10,11 @@ from sqlalchemy.orm import Session
 
 from app.admin.errors import explain_error, humanize_error
 from app.admin.rekaz_ui import kind_label, payload_kind_for_event
+from app.admin.datetime_ui import (
+    format_riyadh_date,
+    format_riyadh_time,
+    riyadh_today_start_utc_naive,
+)
 from app.models import MessageLog, ScheduledMessage, SentNotification, WebhookEvent
 
 LOG_TYPE_LABELS_AR: dict[str, str] = {
@@ -47,7 +52,7 @@ _KIND_PREFIXES: dict[str, tuple[str, ...]] = {
 
 
 def _today_start() -> datetime:
-    return datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    return riyadh_today_start_utc_naive()
 
 
 def _webhook_kind_filter(stmt, kind: str | None):
@@ -202,7 +207,11 @@ def _scheduled_entries(db: Session, phone: str | None, status: str | None, q: st
     rows = db.execute(stmt).scalars().all()
     out: list[dict] = []
     for row in rows:
-        when = row.run_at.strftime("%Y-%m-%d %H:%M") if row.run_at else "—"
+        when = (
+            f"{format_riyadh_date(row.run_at)} {format_riyadh_time(row.run_at)}"
+            if row.run_at
+            else "—"
+        )
         status_note = {
             "pending": f"سيُرسل في {when}",
             "sent": "تم الإرسال في الموعد",

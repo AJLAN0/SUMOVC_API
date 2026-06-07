@@ -2,9 +2,21 @@
 {% from "_macros.html" import page_header, stat_card, health_card, badge_status, time_group_header, table_datetime_iso %}
 {% block title %}نظرة عامة — SUMO{% endblock %}
 {% block content %}
-{{ page_header('نظرة عامة', 'متابعة رسائل واتساب وربط الأحداث') }}
+{{ page_header('نظرة عامة', 'متابعة العملاء والتذكيرات وحالة النظام') }}
 
 <div class="stat-grid home-shortcuts">
+  <a href="/dashboard/clients" class="stat-card-link">
+    <div class="stat-card" style="--stat-accent: #34d399;">
+      <div class="label">العملاء</div>
+      <p class="shortcut-desc">سجل كل عميل — رسائل العميل والموظفين</p>
+    </div>
+  </a>
+  <a href="/dashboard/scheduled" class="stat-card-link">
+    <div class="stat-card" style="--stat-accent: #fbbf24;">
+      <div class="label">التذكيرات</div>
+      <p class="shortcut-desc">مواعيد الإرسال القادمة والفاشلة</p>
+    </div>
+  </a>
   <a href="/dashboard/mappings" class="stat-card-link">
     <div class="stat-card" style="--stat-accent: var(--accent);">
       <div class="label">ربط الأحداث</div>
@@ -15,18 +27,6 @@
     <div class="stat-card" style="--stat-accent: #a78bfa;">
       <div class="label">إرسال تجريبي</div>
       <p class="shortcut-desc">اختبر قالب قبل التفعيل</p>
-    </div>
-  </a>
-  <a href="/dashboard/system" class="stat-card-link">
-    <div class="stat-card" style="--stat-accent: #60a5fa;">
-      <div class="label">أرقام المستلمين</div>
-      <p class="shortcut-desc">فريق بورتريه · منتجات · مشرف</p>
-    </div>
-  </a>
-  <a href="/dashboard/messages" class="stat-card-link">
-    <div class="stat-card" style="--stat-accent: #34d399;">
-      <div class="label">سجل الرسائل</div>
-      <p class="shortcut-desc">كل ما أُرسل عبر هاتف</p>
     </div>
   </a>
 </div>
@@ -55,7 +55,7 @@
 
 <div class="stat-grid" style="margin-bottom: 2rem;">
   {{ stat_card('رسائل ناجحة اليوم', stats.messages_sent_today, '#34d399', '#34d399') }}
-  <a href="/dashboard/messages?status=failed" class="stat-card-link">
+  <a href="/dashboard/logs?status=failed" class="stat-card-link">
     {{ stat_card('رسائل فاشلة اليوم', stats.messages_failed_today, '#f87171', '#f87171') }}
   </a>
   <a href="/dashboard/mappings" class="stat-card-link">
@@ -110,7 +110,7 @@
   <div class="card">
     <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
       <h3>آخر رسائل ناجحة</h3>
-      <a href="/dashboard/messages" class="btn btn-ghost btn-sm">السجل الكامل</a>
+      <a href="/dashboard/clients" class="btn btn-ghost btn-sm">كل العملاء</a>
     </div>
     <div class="card-body" style="padding: 0;">
       {% if stats.recent_success %}
@@ -129,7 +129,11 @@
           <tr>
             {{ table_datetime_iso(m.at) }}
             <td class="ltr font-mono" style="font-size: 0.75rem;">{{ m.template_name or '—' }}</td>
-            <td class="ltr" style="font-size: 0.85rem;">{{ m.phone or '—' }}</td>
+            <td class="ltr" style="font-size: 0.85rem;">
+              {% if m.phone %}
+              <a href="/dashboard/clients/{{ m.phone }}" class="link-inline">{{ m.phone }}</a>
+              {% else %}—{% endif %}
+            </td>
           </tr>
           {% endfor %}
           {% endfor %}
@@ -191,13 +195,19 @@
   </summary>
   <div class="card-body">
     <p style="color: var(--text-muted); font-size: 0.9rem; margin: 0 0 1rem;">
-      سجلات تقنية لتشخيص المشاكل — أحداث ركاز الخام، النشاط الكامل، قفل التكرار.
+      سجلات تقنية لتشخيص المشاكل — ابدأ من سجل النشاط ثم انتقل للتفاصيل الخام.
     </p>
-    <div class="stat-grid" style="margin-bottom: 1.5rem; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));">
+    <div class="stat-grid" style="margin-bottom: 1.5rem; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));">
       <a href="/dashboard/logs" class="stat-card-link">
         <div class="stat-card" style="--stat-accent: #94a3b8;">
           <div class="label">سجل النشاط</div>
           <p class="shortcut-desc">كل العمليات في مكان واحد</p>
+        </div>
+      </a>
+      <a href="/dashboard/messages" class="stat-card-link">
+        <div class="stat-card" style="--stat-accent: #94a3b8;">
+          <div class="label">سجل الرسائل</div>
+          <p class="shortcut-desc">محاولات الإرسال عبر هاتف</p>
         </div>
       </a>
       <a href="/dashboard/events" class="stat-card-link">

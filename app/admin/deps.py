@@ -4,6 +4,12 @@ from typing import Any
 from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 
+from app.admin.datetime_ui import (
+    DISPLAY_TZ_LABEL_AR,
+    format_riyadh_date,
+    format_riyadh_time,
+    to_riyadh,
+)
 from app.admin.errors import explain_error, humanize_error, humanize_error_block
 from app.admin.flash import pop_flashes
 
@@ -12,7 +18,12 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 templates.env.filters["humanize_error"] = humanize_error
 templates.env.filters["explain_error"] = explain_error
+templates.env.filters["riyadh_date"] = format_riyadh_date
+templates.env.filters["riyadh_time"] = format_riyadh_time
+templates.env.filters["riyadh_time_seconds"] = lambda v: format_riyadh_time(v, with_seconds=True)
+templates.env.filters["to_riyadh"] = to_riyadh
 templates.env.globals["humanize_error_block"] = humanize_error_block
+templates.env.globals["display_tz_label"] = DISPLAY_TZ_LABEL_AR
 
 
 def render_admin(

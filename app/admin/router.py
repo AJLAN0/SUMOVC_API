@@ -24,6 +24,7 @@ from app.admin.activity_logs import (
     get_activity_logs,
     get_activity_stats,
 )
+from app.admin.datetime_ui import DISPLAY_TZ_LABEL_AR, format_riyadh_date, format_riyadh_time
 from app.admin.deps import render_admin
 from app.admin.time_groups import coerce_datetime, group_rows_by_time
 from app.admin.errors import explain_error, validate_phone
@@ -541,7 +542,11 @@ async def scheduled_create(
     )
     db.add(row)
     db.commit()
-    flash_success(request, "تم جدولة التذكير بنجاح.", hint=f"الإرسال المتوقع: {run_at_dt.strftime('%Y-%m-%d %H:%M')} UTC")
+    flash_success(
+        request,
+        "تم جدولة التذكير بنجاح.",
+        hint=f"الإرسال المتوقع: {format_riyadh_date(run_at_dt)} {format_riyadh_time(run_at_dt)} ({DISPLAY_TZ_LABEL_AR})",
+    )
     return RedirectResponse("/dashboard/scheduled", status_code=302)
 
 

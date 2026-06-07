@@ -57,8 +57,8 @@
   {% if not dt %}
   <span class="table-datetime__empty">—</span>
   {% else %}
-  <span class="table-datetime__date">{{ dt.strftime('%Y-%m-%d') }}</span>
-  <span class="table-datetime__time">{{ dt.strftime('%H:%M') }}</span>
+  <span class="table-datetime__date">{{ dt | riyadh_date }}</span>
+  <span class="table-datetime__time">{{ dt | riyadh_time }}</span>
   {% endif %}
 </td>
 {% endmacro %}
@@ -72,8 +72,8 @@
   {% if not iso %}
   <span class="table-datetime__empty">—</span>
   {% else %}
-  <span class="table-datetime__date">{{ iso[:10] }}</span>
-  <span class="table-datetime__time">{{ iso[11:16] }}</span>
+  <span class="table-datetime__date">{{ iso | riyadh_date }}</span>
+  <span class="table-datetime__time">{{ iso | riyadh_time }}</span>
   {% endif %}
 </td>
 {% endmacro %}
