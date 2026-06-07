@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% from "_macros.html" import page_header %}
+{% block title %}تعديل الربط — SUMO{% endblock %}
+{% block content %}
+<a href="/dashboard/mappings" class="btn btn-ghost btn-sm" style="margin-bottom: 1rem;">→ العودة لربط الأحداث</a>
+{{ page_header('تعديل ربط الحدث', 'غيّر القالب أو دور الموظفين ثم احفظ') }}
+<p class="ltr font-mono" dir="ltr" style="color: var(--accent); margin: -1rem 0 1.5rem;">{{ mapping.event_name }}</p>
+
+<div class="card" style="max-width: 560px;">
+  <div class="card-body">
+    <form method="post" action="/dashboard/mappings/{{ mapping.id }}/edit">
+      <div class="form-group">
+        <label class="form-label">قالب العميل (هاتف)</label>
+        <select name="template_name" required class="form-select">
+          {% for t in template_list %}
+          <option value="{{ t.name }}" {% if mapping.template_name == t.name %}selected{% endif %}>
+            {{ t.title_ar }} ({{ t.name }})
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">دور الموظفين</label>
+        <select name="staff_role" class="form-select">
+          {% for role_key, role_meta in roles.items() %}
+          <option value="{{ role_key }}" {% if (mapping.staff_role or 'admin') == role_key %}selected{% endif %}>
+            {{ role_meta.label_ar }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">قالب الموظفين (اختياري)</label>
+        <select name="staff_template_name" class="form-select">
+          <option value="">— بدون إشعار موظفين —</option>
+          {% for t in template_list %}
+          <option value="{{ t.name }}" {% if mapping.staff_template_name == t.name %}selected{% endif %}>
+            {{ t.title_ar }} ({{ t.name }})
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">ملاحظة (اختياري)</label>
+        <input name="description" value="{{ mapping.description or '' }}" class="form-input" />
+      </div>
+      <label style="display: flex; align-items: center; gap: 0.5rem; color: var(--text-muted); margin-bottom: 1.25rem; cursor: pointer;">
+        <input type="checkbox" name="enabled" {% if mapping.enabled %}checked{% endif %} style="width: 1.1rem; height: 1.1rem;" />
+        مفعّل — يرسل رسائل واتساب عند وصول الحدث
+      </label>
+      <button type="submit" class="btn btn-primary" style="width: 100%;">حفظ التعديلات</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

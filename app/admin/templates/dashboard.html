@@ -1,8 +1,31 @@
 {% extends "base.html" %}
-{% from "_macros.html" import page_header, stat_card, health_card %}
+{% from "_macros.html" import page_header, stat_card, health_card, badge_status %}
 {% block title %}نظرة عامة — SUMO{% endblock %}
 {% block content %}
-{{ page_header('نظرة عامة', 'ملخص ذكي — تنبيهات واضحة عند وجود مشاكل') }}
+{{ page_header('نظرة عامة', 'متابعة رسائل واتساب وربط الأحداث') }}
+
+<div class="quick-action-grid">
+  <a href="/dashboard/mappings" class="quick-action-card quick-action-primary">
+    <span class="quick-action-icon">🔗</span>
+    <strong>ربط الأحداث</strong>
+    <span>حدد قالب واتساب لكل حدث ركاز</span>
+  </a>
+  <a href="/dashboard/templates#test-send" class="quick-action-card">
+    <span class="quick-action-icon">📤</span>
+    <strong>إرسال تجريبي</strong>
+    <span>اختبر قالب قبل التفعيل</span>
+  </a>
+  <a href="/dashboard/system" class="quick-action-card">
+    <span class="quick-action-icon">📱</span>
+    <strong>أرقام المستلمين</strong>
+    <span>فريق بورتريه · منتجات · مشرف</span>
+  </a>
+  <a href="/dashboard/messages" class="quick-action-card">
+    <span class="quick-action-icon">💬</span>
+    <strong>سجل الرسائل</strong>
+    <span>كل ما أُرسل عبر هاتف</span>
+  </a>
+</div>
 
 {% if stats.alerts %}
 <div class="insight-grid" style="margin-bottom: 1.5rem;">
@@ -21,52 +44,92 @@
 </div>
 {% else %}
 <div class="alert alert-success" style="margin-bottom: 1.5rem;">
-  <strong class="alert-title">كل شيء يبدو طبيعياً</strong>
-  <p class="alert-message">لا توجد تنبيهات عاجلة اليوم. راجع <a href="/dashboard/logs" class="btn-link">سجل النشاط</a> لمتابعة كل ما يحدث في النظام.</p>
+  <strong class="alert-title">النظام يعمل بشكل طبيعي</strong>
+  <p class="alert-message">لا توجد مشاكل عاجلة اليوم. {{ stats.messages_sent_today }} رسالة ناجحة منذ منتصف الليل.</p>
 </div>
 {% endif %}
 
-<div class="stat-grid">
-  {{ stat_card('أحداث ركاز اليوم', stats.webhooks_today) }}
+<div class="stat-grid" style="margin-bottom: 2rem;">
   {{ stat_card('رسائل ناجحة اليوم', stats.messages_sent_today, '#34d399', '#34d399') }}
   <a href="/dashboard/messages?status=failed" class="stat-card-link">
     {{ stat_card('رسائل فاشلة اليوم', stats.messages_failed_today, '#f87171', '#f87171') }}
   </a>
-  <a href="/dashboard/scheduled?status=pending" class="stat-card-link">
-    {{ stat_card('تذكيرات قيد الانتظار', stats.pending_reminders, '#fbbf24', '#fbbf24') }}
+  <a href="/dashboard/mappings" class="stat-card-link">
+    {{ stat_card('روابط مفعّلة', stats.mappings_enabled, '#60a5fa', '#60a5fa') }}
   </a>
-  <a href="/dashboard/scheduled?status=failed" class="stat-card-link">
-    {{ stat_card('تذكيرات فاشلة', stats.failed_reminders, '#fb923c', '#fb923c') }}
+  <a href="/dashboard/scheduled?status=pending" class="stat-card-link">
+    {{ stat_card('تذكيرات قادمة', stats.pending_reminders, '#fbbf24', '#fbbf24') }}
   </a>
 </div>
 
 <div class="split-layout" style="margin-bottom: 2rem;">
   <div class="card">
-    <div class="card-header"><h3>الأحداث خلال ٢٤ ساعة</h3></div>
-    <div class="card-body">
-      <canvas id="webhookChart" height="140"></canvas>
+    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+      <h3>الروابط النشطة</h3>
+      <a href="/dashboard/mappings" class="btn btn-ghost btn-sm">إدارة الكل</a>
     </div>
-  </div>
-  <div class="card">
-    <div class="card-header"><h3>صحة النظام</h3></div>
-    <div class="card-body">
-      {{ health_card(stats.db_health) }}
-      <p style="color: var(--text-muted); font-size: 0.85rem; margin: 1rem 0 0.5rem;">
-        آخر تحديث للجدولة:
-        <span class="ltr">{{ stats.last_scheduled_update or '—' }}</span>
-      </p>
-      {% if stats.overdue_reminders > 0 %}
-      <p class="alert alert-warning" style="margin: 0.75rem 0; padding: 0.65rem 0.85rem; font-size: 0.85rem;">
-        {{ stats.overdue_reminders }} تذكير تجاوز وقت إرساله ولم يُرسل بعد.
+    <div class="card-body" style="padding: 0;">
+      {% if stats.active_mappings %}
+      <table class="data-table" style="margin: 0;">
+        <thead>
+          <tr>
+            <th>الحدث</th>
+            <th>قالب العميل</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for m in stats.active_mappings %}
+          <tr>
+            <td class="ltr font-mono" style="font-size: 0.8rem;">{{ m.event_name }}</td>
+            <td class="ltr font-mono" style="font-size: 0.78rem; color: var(--text-muted);">{{ m.template_name }}</td>
+            <td><a href="/dashboard/mappings/{{ m.id }}/edit" class="btn-link">تعديل</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% if stats.mappings_enabled > stats.active_mappings | length %}
+      <p style="padding: 0.75rem 1rem; margin: 0; font-size: 0.85rem; color: var(--text-dim);">
+        +{{ stats.mappings_enabled - stats.active_mappings | length }} ربط آخر — <a href="/dashboard/mappings">عرض الكل</a>
       </p>
       {% endif %}
-      <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.75rem;">
-        <button hx-get="/admin/api/health/db" hx-swap="innerHTML" hx-target="#probe-db" class="btn btn-ghost btn-sm">إعادة فحص القاعدة</button>
-        <button hx-get="/admin/api/health/hatif" hx-swap="innerHTML" hx-target="#probe-hatif" class="btn btn-ghost btn-sm">فحص هاتف</button>
-        <a href="/health" target="_blank" class="btn btn-ghost btn-sm">/health ↗</a>
+      {% else %}
+      <div class="empty-state" style="padding: 2rem;">
+        <p>لا توجد روابط مفعّلة بعد.</p>
+        <a href="/dashboard/mappings" class="btn btn-primary btn-sm" style="margin-top: 0.75rem;">إضافة أول ربط</a>
       </div>
-      <div id="probe-db" class="probe-slot"></div>
-      <div id="probe-hatif" class="probe-slot"></div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+      <h3>آخر رسائل ناجحة</h3>
+      <a href="/dashboard/messages" class="btn btn-ghost btn-sm">السجل الكامل</a>
+    </div>
+    <div class="card-body" style="padding: 0;">
+      {% if stats.recent_success %}
+      <table class="data-table" style="margin: 0;">
+        <thead>
+          <tr>
+            <th>الوقت</th>
+            <th>القالب</th>
+            <th>الجوال</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for m in stats.recent_success %}
+          <tr>
+            <td class="ltr" style="font-size: 0.8rem; color: var(--text-muted);">{{ m.at[11:16] if m.at else '—' }}</td>
+            <td class="ltr font-mono" style="font-size: 0.75rem;">{{ m.template_name or '—' }}</td>
+            <td class="ltr" style="font-size: 0.85rem;">{{ m.phone or '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="empty-state" style="padding: 2rem;">لم تُرسل رسائل بعد</div>
+      {% endif %}
     </div>
   </div>
 </div>
@@ -74,7 +137,7 @@
 {% if stats.recent_failures %}
 <div class="card" style="margin-bottom: 2rem;">
   <div class="card-header">
-    <h3>آخر المشاكل</h3>
+    <h3>يحتاج انتباهك</h3>
     <span class="badge badge-danger">{{ stats.recent_failures | length }}</span>
   </div>
   <div class="table-wrap">
@@ -83,9 +146,9 @@
         <tr>
           <th>النوع</th>
           <th>الوقت</th>
-          <th>الجوال / القالب</th>
-          <th>التفسير</th>
-          <th>إجراء</th>
+          <th>القالب / الجوال</th>
+          <th>السبب</th>
+          <th></th>
         </tr>
       </thead>
       <tbody>
@@ -94,13 +157,12 @@
           <td>{% if f.kind == 'message' %}رسالة{% else %}تذكير{% endif %}</td>
           <td class="ltr" style="font-size: 0.8rem; color: var(--text-muted);">{{ f.at[:16] if f.at else '—' }}</td>
           <td>
-            <span class="ltr">{{ f.phone or '—' }}</span><br>
-            <span class="ltr font-mono" style="font-size: 0.75rem;">{{ f.template_name or '—' }}</span>
+            <span class="ltr font-mono" style="font-size: 0.75rem;">{{ f.template_name or '—' }}</span><br>
+            <span class="ltr" style="font-size: 0.85rem;">{{ f.phone or '—' }}</span>
           </td>
-          <td>
-            <strong style="color: var(--danger); font-size: 0.85rem;">{{ f.title }}</strong>
-            <p style="margin: 0.25rem 0 0; font-size: 0.85rem; color: var(--text-muted);">{{ f.message }}</p>
-            {% if f.hint %}<p style="margin: 0.2rem 0 0; font-size: 0.8rem; color: var(--text-dim);">💡 {{ f.hint }}</p>{% endif %}
+          <td style="font-size: 0.85rem;">
+            <strong style="color: var(--danger);">{{ f.title }}</strong>
+            <p style="margin: 0.2rem 0 0; color: var(--text-muted);">{{ f.message }}</p>
           </td>
           <td><a href="{{ f.url }}" class="btn-link">عرض</a></td>
         </tr>
@@ -111,84 +173,89 @@
 </div>
 {% endif %}
 
-<div class="card">
-  <div class="card-header">
-    <h3>آخر أحداث ركاز</h3>
-    <a href="/dashboard/events" class="btn btn-ghost btn-sm">عرض الكل</a>
+<details class="card dev-panel">
+  <summary class="card-header" style="cursor: pointer;">
+    <h3 style="display: inline;">أدوات المطور</h3>
+    <span class="badge badge-muted" style="margin-right: 0.5rem;">متقدم</span>
+  </summary>
+  <div class="card-body">
+    <p style="color: var(--text-muted); font-size: 0.9rem; margin: 0 0 1rem;">
+      سجلات تقنية لتشخيص المشاكل — أحداث ركاز الخام، النشاط الكامل، قفل التكرار.
+    </p>
+    <div class="quick-action-grid" style="margin-bottom: 1.5rem;">
+      <a href="/dashboard/logs" class="quick-action-card quick-action-dev">
+        <strong>سجل النشاط</strong>
+        <span>كل العمليات في مكان واحد</span>
+      </a>
+      <a href="/dashboard/events" class="quick-action-card quick-action-dev">
+        <strong>أحداث ركاز</strong>
+        <span>حمولة الويبهوك الكاملة</span>
+      </a>
+      <a href="/dashboard/locks" class="quick-action-card quick-action-dev">
+        <strong>قفل التكرار</strong>
+        <span>منع إرسال مكرر</span>
+      </a>
+    </div>
+    <div class="split-layout">
+      <div>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0 0 0.5rem;">أحداث ركاز اليوم: <strong>{{ stats.webhooks_today }}</strong></p>
+        {% if stats.chart_labels | length %}
+        <canvas id="webhookChart" height="120"></canvas>
+        {% endif %}
+      </div>
+      <div>
+        {{ health_card(stats.db_health) }}
+        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.75rem;">
+          <button hx-get="/admin/api/health/db" hx-swap="innerHTML" hx-target="#probe-db" class="btn btn-ghost btn-sm">فحص القاعدة</button>
+          <button hx-get="/admin/api/health/hatif" hx-swap="innerHTML" hx-target="#probe-hatif" class="btn btn-ghost btn-sm">فحص هاتف</button>
+        </div>
+        <div id="probe-db" class="probe-slot"></div>
+        <div id="probe-hatif" class="probe-slot"></div>
+      </div>
+    </div>
   </div>
-  <div class="table-wrap">
-    <table class="data-table">
-      <thead>
-        <tr>
-          <th>الوقت</th>
-          <th>نوع الحدث</th>
-          <th>الجوال</th>
-          <th>رقم الحجز</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for ev in stats.recent_events %}
-        <tr>
-          <td class="ltr" style="color: var(--text-muted);">{{ ev.created_at[:19] if ev.created_at else '—' }}</td>
-          <td><a href="/dashboard/events/{{ ev.id }}" class="btn-link ltr">{{ ev.event_name }}</a></td>
-          <td class="ltr">{{ ev.phone or '—' }}</td>
-          <td class="ltr">{{ ev.reservation_number or '—' }}</td>
-        </tr>
-        {% else %}
-        <tr><td colspan="4"><div class="empty-state">لا توجد أحداث بعد</div></td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</div>
+</details>
 {% endblock %}
 {% block scripts %}
+{% if stats.chart_labels | length %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script>
   const labels = {{ stats.chart_labels | tojson }};
   const data = {{ stats.chart_counts | tojson }};
-  if (labels.length) {
-    new Chart(document.getElementById('webhookChart'), {
-      type: 'bar',
-      data: {
-        labels,
-        datasets: [{
-          label: 'عدد الأحداث',
-          data,
-          backgroundColor: 'rgba(45, 212, 191, 0.65)',
-          borderRadius: 8,
-        }]
-      },
-      options: {
-        responsive: true,
-        plugins: { legend: { display: false } },
-        scales: {
-          x: { ticks: { color: '#94a3b8', maxRotation: 45 }, grid: { color: 'rgba(148,163,184,0.08)' } },
-          y: { ticks: { color: '#94a3b8' }, beginAtZero: true, grid: { color: 'rgba(148,163,184,0.08)' } }
-        }
+  new Chart(document.getElementById('webhookChart'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'أحداث',
+        data,
+        backgroundColor: 'rgba(96, 165, 250, 0.5)',
+        borderRadius: 6,
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: '#64748b', maxRotation: 45, font: { size: 10 } }, grid: { display: false } },
+        y: { ticks: { color: '#64748b', font: { size: 10 } }, beginAtZero: true, grid: { color: 'rgba(148,163,184,0.06)' } }
       }
-    });
-  }
-
+    }
+  });
+</script>
+{% endif %}
+<script>
   function renderHealthProbe(el, xhr) {
     try {
       const j = JSON.parse(xhr.responseText);
       const ok = j.ok;
-      const title = j.title || (ok ? 'يعمل' : 'مشكلة');
-      const msg = j.message_ar || j.message || JSON.stringify(j);
-      const hint = j.hint || '';
       el.innerHTML =
-        '<div class="health-result ' + (ok ? 'health-ok' : 'health-bad') + '">' +
-        '<div class="health-result-head"><span class="health-dot"></span><strong>' + title + '</strong>' +
-        '<span class="health-status">' + (ok ? 'يعمل' : 'مشكلة') + '</span></div>' +
-        '<p class="health-message">' + msg + '</p>' +
-        (hint ? '<p class="health-hint">' + hint + '</p>' : '') +
-        '</div>';
+        '<div class="health-result ' + (ok ? 'health-ok' : 'health-bad') + '" style="margin-top:0.5rem">' +
+        '<p class="health-message" style="margin:0;font-size:0.85rem">' + (j.message_ar || j.message || '') + '</p></div>';
     } catch (e) {
-      el.innerHTML = '<div class="alert alert-danger">تعذر قراءة نتيجة الفحص</div>';
+      el.innerHTML = '<div class="alert alert-danger" style="margin-top:0.5rem">تعذر قراءة النتيجة</div>';
     }
   }
-
   document.body.addEventListener('htmx:afterOnLoad', function(evt) {
     const t = evt.detail.target;
     if (t && (t.id === 'probe-db' || t.id === 'probe-hatif')) renderHealthProbe(t, evt.detail.xhr);

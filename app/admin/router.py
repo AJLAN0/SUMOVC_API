@@ -721,6 +721,8 @@ async def mappings_page(
             "active": "mappings",
             "mapping_rows": mapping_rows,
             "items": items,
+            "mappings_enabled_count": sum(1 for m in items if m.enabled),
+            "mappings_total_count": len(items),
             "template_list": list_enabled_templates(db),
             "roles": NOTIFICATION_ROLES,
             "kind_filter": kind,
@@ -730,6 +732,68 @@ async def mappings_page(
             "kind_labels": PAYLOAD_KIND_LABELS_AR,
         },
     )
+
+
+@router.get("/dashboard/mappings/{mapping_id}/edit", response_class=HTMLResponse)
+async def mapping_edit_page(
+    request: Request,
+    mapping_id: str,
+    auth: str | RedirectResponse = Depends(require_admin_page),
+    db: Session = Depends(get_db),
+):
+    if redir := _auth_or_redirect(auth):
+        return redir
+    row = db.get(EventTemplateMapping, mapping_id)
+    if not row:
+        return RedirectResponse("/dashboard/mappings", status_code=302)
+    return render_admin(
+        request,
+        "mappings_edit.html",
+        {
+            "active": "mappings",
+            "mapping": row,
+            "template_list": list_enabled_templates(db),
+            "roles": NOTIFICATION_ROLES,
+        },
+    )
+
+
+@router.post("/dashboard/mappings/{mapping_id}/edit", response_class=HTMLResponse)
+async def mapping_edit_save(
+    request: Request,
+    mapping_id: str,
+    auth: str | RedirectResponse = Depends(require_admin_page),
+    db: Session = Depends(get_db),
+    template_name: str = Form(...),
+    enabled: str = Form(""),
+    description: str = Form(""),
+    staff_role: str = Form(""),
+    staff_template_name: str = Form(""),
+):
+    if redir := _auth_or_redirect(auth):
+        return redir
+    from app.admin.services import invalidate_mapping_cache
+
+    row = db.get(EventTemplateMapping, mapping_id)
+    if not row:
+        flash_error(request, "الربط غير موجود.")
+        return RedirectResponse("/dashboard/mappings", status_code=302)
+
+    role = staff_role.strip() or "admin"
+    if role not in NOTIFICATION_ROLES:
+        flash_error(request, "دور الموظفين غير صالح.")
+        return RedirectResponse(f"/dashboard/mappings/{mapping_id}/edit", status_code=302)
+
+    row.template_name = template_name.strip()
+    row.enabled = enabled == "on"
+    row.description = description.strip() or None
+    row.staff_role = role
+    row.staff_template_name = staff_template_name.strip() or None
+    row.updated_at = datetime.utcnow()
+    db.commit()
+    invalidate_mapping_cache()
+    flash_success(request, f"تم تحديث ربط «{row.event_name}».")
+    return RedirectResponse("/dashboard/mappings", status_code=302)
 
 
 @router.post("/dashboard/mappings/create", response_class=HTMLResponse)

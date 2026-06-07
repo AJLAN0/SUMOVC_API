@@ -2,113 +2,40 @@
 {% from "_macros.html" import page_header, empty_row %}
 {% block title %}ربط الأحداث — SUMO{% endblock %}
 {% block content %}
-{{ page_header('ربط الأحداث بالقوالب', 'كل نوع حمولة (حجز · هدية · منتجات · اشتراك) له حقول ورقم جوال مختلف — اربط كل حدث بالقالب المناسب') }}
+{{ page_header('ربط الأحداث بالقوالب', 'حدد أي قالب واتساب يُرسل عند كل حدث من ركاز') }}
 
-<div class="filter-bar" style="margin-bottom: 1.25rem;">
-  <span style="color: var(--text-muted); font-size: 0.9rem; align-self: center;">تصفية حسب النوع:</span>
+<div class="stat-grid" style="grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); margin-bottom: 1.5rem;">
+  <div class="stat-card" style="--stat-accent: var(--accent);">
+    <div class="label">روابط مفعّلة</div>
+    <div class="value">{{ mappings_enabled_count }}</div>
+  </div>
+  <div class="stat-card" style="--stat-accent: var(--text-dim);">
+    <div class="label">إجمالي الروابط</div>
+    <div class="value">{{ mappings_total_count }}</div>
+  </div>
+</div>
+
+<div class="filter-bar" style="margin-bottom: 1rem;">
+  <span style="color: var(--text-muted); font-size: 0.9rem; align-self: center;">تصفية:</span>
   {% for f in kind_filters %}
   <a href="/dashboard/mappings?kind={{ f.value }}"
     class="btn btn-sm {% if kind_filter == f.value %}btn-primary{% else %}btn-ghost{% endif %}">{{ f.label }}</a>
   {% endfor %}
 </div>
 
-<div class="split-layout">
-  <div class="card">
-    <div class="card-header"><h3>إضافة ربط جديد</h3></div>
-    <div class="card-body">
-      <form method="post" action="/dashboard/mappings/create">
-        <div class="form-group">
-          <label class="form-label">حدث ركاز</label>
-          <input name="event_name" required list="rekaz-events" placeholder="ReservationCreatedEvent"
-            class="form-input ltr font-mono" dir="ltr" />
-          <datalist id="rekaz-events">
-            {% for group in event_groups %}
-            {% for ev in group.events %}
-            <option value="{{ ev }}">{{ group.kind_label }} — {{ ev }}</option>
-            {% endfor %}
-            {% endfor %}
-          </datalist>
-          <p style="font-size: 0.8rem; color: var(--text-dim); margin-top: 0.35rem;">
-            أو اكتب اسم حدث جديد كما يرسله ركاز
-          </p>
-        </div>
-        <div class="form-group">
-          <label class="form-label">قالب العميل (هاتف)</label>
-          <select name="template_name" required class="form-select">
-            {% for t in template_list %}
-            <option value="{{ t.name }}">{{ t.title_ar }} ({{ t.name }})</option>
-            {% endfor %}
-          </select>
-          <p style="font-size: 0.8rem; color: var(--text-dim); margin-top: 0.35rem;">
-            <a href="/dashboard/templates">إدارة القوالب والمتغيرات</a>
-          </p>
-        </div>
-        <div class="form-group">
-          <label class="form-label">دور الموظفين</label>
-          <select name="staff_role" class="form-select">
-            {% for role_key, role_meta in roles.items() %}
-            <option value="{{ role_key }}" {% if role_key == 'admin' %}selected{% endif %}>{{ role_meta.label_ar }}</option>
-            {% endfor %}
-          </select>
-          <p style="font-size: 0.8rem; color: var(--text-dim); margin-top: 0.35rem;">
-            الافتراضي: مشرف — <a href="/dashboard/system">إدارة أرقام الأدوار</a>
-          </p>
-        </div>
-        <div class="form-group">
-          <label class="form-label">قالب الموظفين (اختياري)</label>
-          <select name="staff_template_name" class="form-select">
-            <option value="">— بدون إشعار موظفين —</option>
-            {% for t in template_list %}
-            <option value="{{ t.name }}">{{ t.title_ar }} ({{ t.name }})</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">ملاحظة (اختياري)</label>
-          <input name="description" placeholder="مثال: عند إنشاء حجز جديد" class="form-input" />
-        </div>
-        <label style="display: flex; align-items: center; gap: 0.5rem; color: var(--text-muted); margin-bottom: 1rem; cursor: pointer;">
-          <input type="checkbox" name="enabled" checked style="width: 1.1rem; height: 1.1rem;" />
-          مفعّل
-        </label>
-        <button type="submit" class="btn btn-primary" style="width: 100%;">إضافة</button>
-      </form>
-    </div>
+<div class="card" style="margin-bottom: 1.5rem;">
+  <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+    <h3>الروابط {% if kind_filter != 'all' %}({{ kind_filter_label }}){% endif %}</h3>
+    <a href="#add-mapping" class="btn btn-primary btn-sm">+ إضافة ربط</a>
   </div>
-
-  <div class="card">
-    <div class="card-header"><h3>مرجع أنواع الحمولة</h3></div>
-    <div class="card-body" style="font-size: 0.85rem; color: var(--text-muted);">
-      {% for group in event_groups %}
-      <div style="margin-bottom: 1rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--border);">
-        <strong style="color: var(--text);">{{ group.kind_label }}</strong>
-        <p style="margin: 0.35rem 0 0.5rem; font-size: 0.8rem; color: var(--text-dim);">{{ group.phone_hint }}</p>
-        <p style="margin: 0; line-height: 1.6;">
-          {% for ev in group.events[:4] %}
-          <span class="ltr font-mono" dir="ltr" style="font-size: 0.75rem;">{{ ev }}</span>{% if not loop.last %} · {% endif %}
-          {% endfor %}
-          {% if group.events|length > 4 %}
-          <span style="color: var(--text-dim);">+{{ group.events|length - 4 }} أخرى</span>
-          {% endif %}
-        </p>
-      </div>
-      {% endfor %}
-    </div>
-  </div>
-</div>
-
-<div class="card" style="margin-top: 1.5rem;">
-  <div class="card-header"><h3>الروابط الحالية {% if kind_filter != 'all' %}({{ kind_filter_label }}){% endif %}</h3></div>
   <div class="table-wrap">
     <table class="data-table">
       <thead>
         <tr>
-          <th>النوع</th>
           <th>حدث ركاز</th>
           <th>قالب العميل</th>
-          <th>دور الموظفين</th>
-          <th>قالب الموظفين</th>
-          <th>مفعّل</th>
+          <th>الموظفون</th>
+          <th>الحالة</th>
           <th>إجراء</th>
         </tr>
       </thead>
@@ -117,31 +44,99 @@
         {% set m = row.mapping %}
         <tr id="row-{{ m.id }}">
           <td>
-            <span class="badge badge-muted" title="{{ row.phone_hint }}">{{ row.kind_label }}</span>
+            <span class="ltr font-mono" dir="ltr" style="font-size: 0.82rem;">{{ m.event_name }}</span>
+            <span class="badge badge-muted" style="margin-right: 0.35rem; font-size: 0.7rem;">{{ row.kind_label }}</span>
+            {% if m.description %}
+            <p style="margin: 0.25rem 0 0; font-size: 0.78rem; color: var(--text-dim);">{{ m.description }}</p>
+            {% endif %}
           </td>
-          <td class="ltr font-mono" style="font-size: 0.8rem;">{{ m.event_name }}</td>
           <td class="ltr font-mono" style="font-size: 0.8rem;">{{ m.template_name or '—' }}</td>
           <td style="font-size: 0.85rem;">
-            {{ roles.get(m.staff_role or 'admin', {}).get('label_ar', m.staff_role or 'admin') }}
+            {% if m.staff_template_name %}
+            {{ roles.get(m.staff_role or 'admin', {}).get('label_ar', m.staff_role) }}
+            <span class="ltr font-mono" dir="ltr" style="display: block; font-size: 0.75rem; color: var(--text-dim);">{{ m.staff_template_name }}</span>
+            {% else %}
+            <span style="color: var(--text-dim);">—</span>
+            {% endif %}
           </td>
-          <td class="ltr font-mono" style="font-size: 0.8rem;">{{ m.staff_template_name or '—' }}</td>
           <td>
             <form method="post" action="/dashboard/mappings/{{ m.id }}/toggle" style="display: inline;">
-              <button type="submit" class="btn btn-sm {% if m.enabled %}badge-success{% else %}badge-muted{% endif %}" style="border: none; cursor: pointer;">
-                {{ 'نعم' if m.enabled else 'لا' }}
+              <button type="submit" class="badge {% if m.enabled %}badge-success{% else %}badge-muted{% endif %}" style="border: none; cursor: pointer;">
+                {{ 'مفعّل' if m.enabled else 'معطّل' }}
               </button>
             </form>
           </td>
-          <td>
+          <td style="white-space: nowrap;">
+            <a href="/dashboard/mappings/{{ m.id }}/edit" class="btn-link">تعديل</a>
             <button hx-delete="/admin/api/mappings/{{ m.id }}" hx-target="#row-{{ m.id }}" hx-swap="outerHTML"
-              hx-confirm="حذف هذا الربط؟" class="btn btn-danger btn-sm">حذف</button>
+              hx-confirm="حذف ربط «{{ m.event_name }}»؟" class="btn btn-danger btn-sm" style="margin-right: 0.5rem;">حذف</button>
           </td>
         </tr>
         {% else %}
-        {{ empty_row(7, 'لا توجد روابط لهذا النوع') }}
+        {{ empty_row(5, 'لا توجد روابط — أضف أول ربط من النموذج أدناه') }}
         {% endfor %}
       </tbody>
     </table>
   </div>
 </div>
+
+<details class="card" id="add-mapping" style="margin-bottom: 1.5rem;">
+  <summary class="card-header" style="cursor: pointer; list-style: none;">
+    <h3 style="display: inline;">إضافة ربط جديد</h3>
+    <span style="color: var(--text-dim); font-size: 0.85rem; margin-right: 0.5rem;">اضغط للفتح</span>
+  </summary>
+  <div class="card-body" style="max-width: 520px;">
+    <form method="post" action="/dashboard/mappings/create">
+      <div class="form-group">
+        <label class="form-label">حدث ركاز</label>
+        <input name="event_name" required list="rekaz-events" placeholder="ReservationConfirmedEvent"
+          class="form-input ltr font-mono" dir="ltr" />
+        <datalist id="rekaz-events">
+          {% for group in event_groups %}
+          {% for ev in group.events %}
+          <option value="{{ ev }}">{{ group.kind_label }}</option>
+          {% endfor %}
+          {% endfor %}
+        </datalist>
+      </div>
+      <div class="form-group">
+        <label class="form-label">قالب العميل</label>
+        <select name="template_name" required class="form-select">
+          {% for t in template_list %}
+          <option value="{{ t.name }}">{{ t.title_ar }} ({{ t.name }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">دور الموظفين</label>
+        <select name="staff_role" class="form-select">
+          {% for role_key, role_meta in roles.items() %}
+          <option value="{{ role_key }}" {% if role_key == 'portrait_technician' %}selected{% endif %}>{{ role_meta.label_ar }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">قالب الموظفين (اختياري)</label>
+        <select name="staff_template_name" class="form-select">
+          <option value="">— بدون —</option>
+          {% for t in template_list %}
+          <option value="{{ t.name }}">{{ t.title_ar }} ({{ t.name }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">ملاحظة</label>
+        <input name="description" placeholder="مثال: تأكيد الحجز للعميل" class="form-input" />
+      </div>
+      <label style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem; cursor: pointer;">
+        <input type="checkbox" name="enabled" checked style="width: 1.1rem; height: 1.1rem;" /> مفعّل
+      </label>
+      <button type="submit" class="btn btn-primary">إضافة الربط</button>
+    </form>
+    <p style="font-size: 0.8rem; color: var(--text-dim); margin: 1rem 0 0;">
+      <a href="/dashboard/templates">قوالب واتساب</a> ·
+      <a href="/dashboard/system">أرقام المستلمين</a>
+    </p>
+  </div>
+</details>
 {% endblock %}

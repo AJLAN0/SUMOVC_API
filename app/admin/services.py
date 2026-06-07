@@ -384,8 +384,53 @@ def get_dashboard_stats(db: Session) -> dict[str, Any]:
 
     db_health = probe_database()
 
+    mappings_total = db.scalar(select(func.count()).select_from(EventTemplateMapping)) or 0
+    mappings_enabled = (
+        db.scalar(
+            select(func.count())
+            .select_from(EventTemplateMapping)
+            .where(EventTemplateMapping.enabled.is_(True))
+        )
+        or 0
+    )
+    active_mapping_rows = db.execute(
+        select(EventTemplateMapping)
+        .where(EventTemplateMapping.enabled.is_(True))
+        .order_by(EventTemplateMapping.event_name)
+        .limit(6)
+    ).scalars().all()
+    active_mappings = [
+        {
+            "id": m.id,
+            "event_name": m.event_name,
+            "template_name": m.template_name,
+            "staff_template_name": m.staff_template_name,
+        }
+        for m in active_mapping_rows
+    ]
+
+    recent_success_messages = db.execute(
+        select(MessageLog)
+        .where(MessageLog.status == "success")
+        .order_by(MessageLog.created_at.desc())
+        .limit(5)
+    ).scalars().all()
+    recent_success = [
+        {
+            "id": m.id,
+            "phone": m.phone,
+            "template_name": m.template_name,
+            "at": m.created_at.isoformat() if m.created_at else None,
+        }
+        for m in recent_success_messages
+    ]
+
     return {
         "webhooks_today": webhooks_today,
+        "mappings_total": mappings_total,
+        "mappings_enabled": mappings_enabled,
+        "active_mappings": active_mappings,
+        "recent_success": recent_success,
         "messages_sent_today": messages_sent_today,
         "messages_failed_today": messages_failed_today,
         "pending_reminders": pending_reminders,
