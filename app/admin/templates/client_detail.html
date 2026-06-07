@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% from "_macros.html" import page_header, badge_status, time_group_header, table_datetime, recipient_badge %}
+{% block title %}عميل {{ profile.phone_display }} — SUMO{% endblock %}
+{% block content %}
+<a href="/dashboard/clients" class="btn btn-ghost btn-sm" style="margin-bottom: 1rem;">→ العودة للعملاء</a>
+{{ page_header('سجل العميل', 'رسائل العميل والموظفين والتذكيرات وأحداث ركاز') }}
+
+<div class="stat-grid" style="margin-bottom: 1.5rem; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));">
+  <div class="stat-card" style="--stat-accent: var(--accent);">
+    <div class="label">الجوال</div>
+    <div class="value ltr" dir="ltr" style="font-size: 1.1rem;">{{ profile.phone_display }}</div>
+  </div>
+  <div class="stat-card" style="--stat-accent: var(--info);">
+    <div class="label">أحداث ركاز</div>
+    <div class="value">{{ profile.webhook_count }}</div>
+  </div>
+  <div class="stat-card" style="--stat-accent: var(--success);">
+    <div class="label">رسائل العميل</div>
+    <div class="value">{{ profile.message_count }}</div>
+  </div>
+  <div class="stat-card" style="--stat-accent: var(--warning);">
+    <div class="label">تذكيرات</div>
+    <div class="value">{{ profile.scheduled_count }}</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <h3>سجل الإرسال</h3>
+    <span class="badge badge-muted">{{ history | length }} سجل</span>
+  </div>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th style="width: 6rem;">التاريخ</th>
+          <th>النوع</th>
+          <th>المستلم</th>
+          <th>القالب / الحدث</th>
+          <th>الحالة</th>
+          <th>إجراء</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for group_label, group_date, group_rows in grouped_history %}
+        {{ time_group_header(group_label, 6, group_date) }}
+        {% for item in group_rows %}
+        <tr class="client-row client-row--{{ item.entry_kind }}">
+          {{ table_datetime(item.at) }}
+          <td>
+            <span class="badge badge-muted" style="font-size: 0.72rem;">{{ item.entry_kind_label }}</span>
+          </td>
+          <td>{{ recipient_badge(item.recipient_label, item.recipient_kind) }}</td>
+          <td>
+            {% if item.template_name %}
+            <span class="ltr font-mono" dir="ltr" style="font-size: 0.8rem;">{{ item.template_name }}</span>
+            {% else %}
+            <span class="ltr font-mono" dir="ltr" style="font-size: 0.8rem;">{{ item.title }}</span>
+            {% endif %}
+            {% if item.subtitle %}
+            <span style="display: block; font-size: 0.75rem; color: var(--text-dim); margin-top: 0.2rem;">{{ item.subtitle }}</span>
+            {% endif %}
+            {% if item.payload_kind_label %}
+            <span class="badge badge-muted" style="margin-top: 0.25rem; font-size: 0.68rem;">{{ item.payload_kind_label }}</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if item.entry_kind == 'webhook' %}
+            <span class="badge badge-muted">وارد</span>
+            {% else %}
+            {{ badge_status(item.status) }}
+            {% endif %}
+          </td>
+          <td>
+            {% if item.detail_url %}
+            <div class="table-actions">
+              <a href="{{ item.detail_url }}" class="btn-link">عرض</a>
+            </div>
+            {% else %}—{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+        {% else %}
+        <tr><td colspan="6"><div class="empty-state">لا يوجد سجل لهذا العميل</div></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

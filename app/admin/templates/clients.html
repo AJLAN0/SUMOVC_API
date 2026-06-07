@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% from "_macros.html" import page_header, empty_row, pagination_bar, table_datetime %}
+{% block title %}العملاء — SUMO{% endblock %}
+{% block content %}
+{{ page_header('العملاء', 'سجل كل عميل — رسائل العميل والموظفين والتذكيرات') }}
+
+<form method="get" class="filter-bar">
+  <div class="form-group" style="margin: 0; flex: 1; min-width: 200px;">
+    <label class="form-label">بحث برقم الجوال</label>
+    <input name="q" value="{{ q }}" class="form-input ltr" dir="ltr" placeholder="9665..." />
+  </div>
+  <div class="form-group" style="margin: 0;">
+    <label class="form-label">عدد الصفوف</label>
+    <select name="page_size" class="form-select">
+      <option value="25" {% if page_size == 25 %}selected{% endif %}>25</option>
+      <option value="50" {% if page_size == 50 %}selected{% endif %}>50</option>
+      <option value="100" {% if page_size == 100 %}selected{% endif %}>100</option>
+    </select>
+  </div>
+  <button type="submit" class="btn btn-primary" style="align-self: flex-end;">بحث</button>
+</form>
+
+<p style="color: var(--text-muted); font-size: 0.9rem; margin: 0 0 1rem;">
+  إجمالي العملاء: <strong style="color: var(--text);">{{ total }}</strong>
+</p>
+
+<div class="card">
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th style="width: 6rem;">آخر نشاط</th>
+          <th>الجوال</th>
+          <th>أحداث ركاز</th>
+          <th>رسائل العميل</th>
+          <th>تذكيرات</th>
+          <th>إجراء</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in items %}
+        <tr>
+          {{ table_datetime(c.last_at) }}
+          <td class="ltr font-mono" dir="ltr">{{ c.phone_display or c.phone }}</td>
+          <td>{{ c.webhook_count }}</td>
+          <td>{{ c.message_count }}</td>
+          <td>{{ c.scheduled_count }}</td>
+          <td>
+            <div class="table-actions">
+              <a href="/dashboard/clients/{{ c.phone }}" class="btn-link">السجل</a>
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        {{ empty_row(6, 'لا يوجد عملاء بعد') }}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{{ pagination_bar(page, page_size, total, has_more, '&q=' ~ q) }}
+{% endblock %}

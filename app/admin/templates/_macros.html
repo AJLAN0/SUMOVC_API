@@ -63,6 +63,10 @@
 </td>
 {% endmacro %}
 
+{% macro recipient_badge(label, kind) -%}
+<span class="badge badge-recipient badge-recipient--{{ kind }}">{{ label }}</span>
+{%- endmacro %}
+
 {% macro table_datetime_iso(iso) %}
 <td class="table-datetime ltr" dir="ltr">
   {% if not iso %}

@@ -468,6 +468,36 @@ body {
 .badge-danger { background: rgba(248, 113, 113, 0.15); color: var(--danger); }
 .badge-warning { background: rgba(251, 191, 36, 0.15); color: var(--warning); }
 .badge-muted { background: rgba(148, 163, 184, 0.12); color: var(--text-muted); }
+
+.badge-recipient {
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.badge-recipient--customer {
+  background: rgba(52, 211, 153, 0.12);
+  color: var(--success);
+}
+
+.badge-recipient--staff {
+  background: rgba(96, 165, 250, 0.12);
+  color: var(--info);
+}
+
+.badge-recipient--scheduled {
+  background: rgba(251, 191, 36, 0.12);
+  color: var(--warning);
+}
+
+.badge-recipient--webhook {
+  background: rgba(148, 163, 184, 0.12);
+  color: var(--text-muted);
+}
+
+.client-row--customer_message { border-right: 3px solid rgba(52, 211, 153, 0.35); }
+.client-row--staff_message { border-right: 3px solid rgba(96, 165, 250, 0.35); }
+.client-row--scheduled { border-right: 3px solid rgba(251, 191, 36, 0.35); }
+.client-row--webhook { border-right: 3px solid rgba(148, 163, 184, 0.3); }
 .badge-info { background: rgba(96, 165, 250, 0.15); color: var(--info); }
 
 /* Alerts */

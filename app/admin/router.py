@@ -16,6 +16,7 @@ from app.admin.auth import (
     record_login_failure,
     require_admin_page,
 )
+from app.admin.clients import get_client_history, get_client_profile, list_clients
 from app.admin.activity_logs import (
     LOG_TYPE_DESCRIPTIONS_AR,
     LOG_TYPE_LABELS_AR,
@@ -353,6 +354,59 @@ async def messages_page(
             "has_more": page * page_size < total,
             "status": status or "",
             "phone": phone or "",
+        },
+    )
+
+
+@router.get("/dashboard/clients", response_class=HTMLResponse)
+async def clients_page(
+    request: Request,
+    auth: str | RedirectResponse = Depends(require_admin_page),
+    db: Session = Depends(get_db),
+    page: int = 1,
+    page_size: int = 50,
+    q: str | None = None,
+):
+    if redir := _auth_or_redirect(auth):
+        return redir
+    result = list_clients(db, page=page, page_size=page_size, q=q)
+    return render_admin(
+        request,
+        "clients.html",
+        {
+            "active": "clients",
+            "items": result["items"],
+            "page": result["page"],
+            "page_size": result["page_size"],
+            "total": result["total"],
+            "has_more": result["has_more"],
+            "q": q or "",
+        },
+    )
+
+
+@router.get("/dashboard/clients/{client_phone}", response_class=HTMLResponse)
+async def client_detail_page(
+    request: Request,
+    client_phone: str,
+    auth: str | RedirectResponse = Depends(require_admin_page),
+    db: Session = Depends(get_db),
+):
+    if redir := _auth_or_redirect(auth):
+        return redir
+    profile = get_client_profile(db, client_phone)
+    if not profile:
+        return RedirectResponse("/dashboard/clients", status_code=302)
+    history = get_client_history(db, profile["phone"])
+    grouped_history = group_rows_by_time(history, get_dt=lambda e: e.get("at"))
+    return render_admin(
+        request,
+        "client_detail.html",
+        {
+            "active": "clients",
+            "profile": profile,
+            "history": history,
+            "grouped_history": grouped_history,
         },
     )
 
