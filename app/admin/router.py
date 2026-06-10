@@ -314,9 +314,13 @@ async def event_detail_page(
 ):
     if redir := _auth_or_redirect(auth):
         return redir
+    from app.admin.hatif_ui import is_hatif_webhook
+
     ev = db.get(WebhookEvent, event_id)
     if not ev:
         return RedirectResponse("/dashboard/events", status_code=302)
+    if is_hatif_webhook(ev.event_name):
+        return RedirectResponse(f"/dashboard/hatif-events/{event_id}", status_code=302)
     try:
         payload_pretty = json.dumps(json.loads(ev.payload_json), ensure_ascii=False, indent=2)
     except Exception:
@@ -331,6 +335,100 @@ async def event_detail_page(
             "payload_pretty": payload_pretty,
             "kind_label": kind_label(kind),
             "phone_hint": PHONE_HINTS_AR.get(kind, ""),
+        },
+    )
+
+
+@router.get("/dashboard/hatif-events", response_class=HTMLResponse)
+async def hatif_events_page(
+    request: Request,
+    auth: str | RedirectResponse = Depends(require_admin_page),
+    db: Session = Depends(get_db),
+    page: int = 1,
+    kind: str = "all",
+    event_name: str | None = None,
+    phone: str | None = None,
+    q: str | None = None,
+):
+    if redir := _auth_or_redirect(auth):
+        return redir
+    from app.admin.hatif_ui import (
+        HATIF_EVENT_NAME_HINTS,
+        HATIF_KIND_LABELS_AR,
+        HATIF_KIND_ORDER,
+        apply_hatif_event_filters,
+        get_hatif_event_stats,
+        hatif_event_row_context,
+    )
+
+    page_size = 25
+    stmt = select(WebhookEvent)
+    stmt = apply_hatif_event_filters(
+        stmt,
+        kind=kind or "all",
+        event_name=event_name,
+        phone=phone,
+        q=q,
+    )
+    stmt = stmt.order_by(WebhookEvent.created_at.desc())
+    total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+    items = db.execute(stmt.offset((page - 1) * page_size).limit(page_size)).scalars().all()
+    event_rows = [hatif_event_row_context(ev) for ev in items]
+    grouped_event_rows = group_rows_by_time(event_rows, get_dt=lambda r: r["event"].created_at)
+    kind_options = [{"value": "all", "label": "الكل"}] + [
+        {"value": k, "label": HATIF_KIND_LABELS_AR[k]} for k in HATIF_KIND_ORDER
+    ]
+    return render_admin(
+        request,
+        "hatif_events.html",
+        {
+            "active": "hatif_events",
+            "event_rows": event_rows,
+            "grouped_event_rows": grouped_event_rows,
+            "items": items,
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "kind": kind or "all",
+            "event_name": event_name or "",
+            "phone": phone or "",
+            "q": q or "",
+            "kind_options": kind_options,
+            "event_name_hints": HATIF_EVENT_NAME_HINTS,
+            "stats": get_hatif_event_stats(db),
+        },
+    )
+
+
+@router.get("/dashboard/hatif-events/{event_id}", response_class=HTMLResponse)
+async def hatif_event_detail_page(
+    request: Request,
+    event_id: str,
+    auth: str | RedirectResponse = Depends(require_admin_page),
+    db: Session = Depends(get_db),
+):
+    if redir := _auth_or_redirect(auth):
+        return redir
+    from app.admin.hatif_ui import hatif_event_detail_context, is_hatif_webhook
+
+    ev = db.get(WebhookEvent, event_id)
+    if not ev or not is_hatif_webhook(ev.event_name):
+        return RedirectResponse("/dashboard/hatif-events", status_code=302)
+    try:
+        payload_pretty = json.dumps(json.loads(ev.payload_json), ensure_ascii=False, indent=2)
+    except Exception:
+        payload_pretty = ev.payload_json
+    detail = hatif_event_detail_context(ev)
+    return render_admin(
+        request,
+        "hatif_event_detail.html",
+        {
+            "active": "hatif_events",
+            "event": ev,
+            "payload_pretty": payload_pretty,
+            "kind_label": detail["kind_label"],
+            "fields": detail["fields"],
+            "message_log_id": detail["message_log_id"],
         },
     )
 

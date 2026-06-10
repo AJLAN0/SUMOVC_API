@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% from "_macros.html" import page_header, empty_row, time_group_header, table_datetime %}
+{% block title %}أحداث هاتف — SUMO{% endblock %}
+{% block content %}
+{{ page_header('أحداث هاتف', 'للمطور — كل webhooks الواردة من هاتف (تسليم واتساب · المكالمات)') }}
+
+<form method="get" class="filter-bar">
+  <div class="form-group" style="margin: 0; min-width: 150px;">
+    <label class="form-label">نوع الويبهوك</label>
+    <select name="kind" class="form-select">
+      {% for opt in kind_options %}
+      <option value="{{ opt.value }}" {% if kind == opt.value %}selected{% endif %}>{{ opt.label }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="form-group" style="margin: 0; min-width: 180px;">
+    <label class="form-label">اسم الحدث</label>
+    <input name="event_name" value="{{ event_name }}" list="hatif-events" placeholder="HatifStatus:Delivered" class="form-input ltr" dir="ltr" />
+    <datalist id="hatif-events">
+      {% for name in event_name_hints %}
+      <option value="{{ name }}"></option>
+      {% endfor %}
+    </datalist>
+  </div>
+  <div class="form-group" style="margin: 0; min-width: 140px;">
+    <label class="form-label">الجوال</label>
+    <input name="phone" value="{{ phone }}" placeholder="9665..." class="form-input ltr" dir="ltr" />
+  </div>
+  <div class="form-group" style="margin: 0; flex: 1; min-width: 200px;">
+    <label class="form-label">بحث</label>
+    <input name="q" value="{{ q }}" placeholder="messageId، callId، قالب..." class="form-input" />
+  </div>
+  <button type="submit" class="btn btn-primary" style="align-self: flex-end;">بحث</button>
+</form>
+
+<p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1rem;">
+  الإجمالي: <strong>{{ total }}</strong> حدث
+  — تسليم واتساب اليوم: <strong>{{ stats.whatsapp_status_today }}</strong>
+  — مكالمات اليوم: <strong>{{ stats.call_today }}</strong>
+</p>
+
+<div class="card">
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th style="width: 6rem;">التاريخ</th>
+          <th>النوع</th>
+          <th>حدث هاتف</th>
+          <th>ملخص</th>
+          <th>المعرّف</th>
+          <th>الجوال</th>
+          <th>إجراء</th>
+        </tr>
+      </thead>
+      <tbody id="hatif-events-body">
+        {% for group_label, group_date, group_rows in grouped_event_rows %}
+        {{ time_group_header(group_label, 7, group_date) }}
+        {% for row in group_rows %}
+        {% set ev = row.event %}
+        <tr id="row-{{ ev.id }}">
+          {{ table_datetime(ev.created_at) }}
+          <td><span class="badge badge-muted log-type-badge log-type-badge--hatif_status">{{ row.kind_label }}</span></td>
+          <td><a href="/dashboard/hatif-events/{{ ev.id }}" class="table-link ltr font-mono" dir="ltr">{{ ev.event_name }}</a></td>
+          <td style="font-size: 0.85rem;">{{ row.summary or '—' }}</td>
+          <td class="ltr font-mono" style="font-size: 0.8rem;">{{ ev.external_event_id or '—' }}</td>
+          <td class="ltr">{{ ev.phone or '—' }}</td>
+          <td style="white-space: nowrap;">
+            {% if row.message_log_id %}
+            <a href="/dashboard/messages/{{ row.message_log_id }}" class="btn-link btn-sm">الرسالة</a>
+            {% endif %}
+            <button hx-delete="/admin/api/events/{{ ev.id }}" hx-target="#row-{{ ev.id }}" hx-swap="outerHTML"
+              hx-confirm="هل تريد حذف هذا الحدث؟" class="btn btn-danger btn-sm">حذف</button>
+          </td>
+        </tr>
+        {% endfor %}
+        {% else %}
+        {{ empty_row(7, 'لا توجد أحداث هاتف — تأكد من تسجيل webhooks في لوحة هاتف') }}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% if total > page_size %}
+<div class="pagination">
+  {% if page > 1 %}<a href="?page={{ page - 1 }}&kind={{ kind }}&event_name={{ event_name }}&phone={{ phone }}&q={{ q }}">→ السابق</a>{% endif %}
+  <span style="color: var(--text-muted);">صفحة {{ page }}</span>
+  {% if page * page_size < total %}<a href="?page={{ page + 1 }}&kind={{ kind }}&event_name={{ event_name }}&phone={{ phone }}&q={{ q }}">التالي ←</a>{% endif %}
+</div>
+{% endif %}
+{% endblock %}

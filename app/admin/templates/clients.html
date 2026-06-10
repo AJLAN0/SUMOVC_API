@@ -2,7 +2,7 @@
 {% from "_macros.html" import page_header, empty_row, pagination_bar, table_datetime %}
 {% block title %}العملاء — SUMO{% endblock %}
 {% block content %}
-{{ page_header('العملاء', 'سجل كل عميل — رسائل العميل والموظفين والتذكيرات') }}
+{{ page_header('العملاء', 'سجل كل عميل — رسائل العميل والموظفين والتذكيرات وأحداث ركاز وهاتف') }}
 
 <form method="get" class="filter-bar">
   <div class="form-group" style="margin: 0; flex: 1; min-width: 200px;">
@@ -31,8 +31,9 @@
         <tr>
           <th style="width: 6rem;">آخر نشاط</th>
           <th>الجوال</th>
-          <th>أحداث ركاز</th>
-          <th>رسائل العميل</th>
+          <th>ركاز</th>
+          <th>هاتف</th>
+          <th>رسائل</th>
           <th>تذكيرات</th>
           <th>إجراء</th>
         </tr>
@@ -43,6 +44,7 @@
           {{ table_datetime(c.last_at) }}
           <td class="ltr font-mono" dir="ltr">{{ c.phone_display or c.phone }}</td>
           <td>{{ c.webhook_count }}</td>
+          <td>{{ c.hatif_count or 0 }}</td>
           <td>{{ c.message_count }}</td>
           <td>{{ c.scheduled_count }}</td>
           <td>
@@ -52,7 +54,7 @@
           </td>
         </tr>
         {% else %}
-        {{ empty_row(6, 'لا يوجد عملاء بعد') }}
+        {{ empty_row(7, 'لا يوجد عملاء بعد') }}
         {% endfor %}
       </tbody>
     </table>

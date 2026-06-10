@@ -272,6 +272,15 @@ def get_dashboard_stats(db: Session) -> dict[str, Any]:
         )
     ) or 0
 
+    hatif_webhooks_today = db.scalar(
+        select(func.count())
+        .select_from(WebhookEvent)
+        .where(
+            WebhookEvent.created_at >= today,
+            WebhookEvent.event_name.like(f"{HATIF_WEBHOOK_EVENT_PREFIX}%"),
+        )
+    ) or 0
+
     messages_sent_today = db.scalar(
         select(func.count())
         .select_from(MessageLog)
@@ -473,6 +482,7 @@ def get_dashboard_stats(db: Session) -> dict[str, Any]:
 
     return {
         "webhooks_today": webhooks_today,
+        "hatif_webhooks_today": hatif_webhooks_today,
         "mappings_total": mappings_total,
         "mappings_enabled": mappings_enabled,
         "active_mappings": active_mappings,

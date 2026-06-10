@@ -9,6 +9,13 @@ from typing import Any
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
+from app.admin.hatif_ui import (
+    delivery_status_label,
+    hatif_event_row_context,
+    hatif_kind_label,
+    hatif_webhook_kind,
+    is_hatif_webhook,
+)
 from app.admin.rekaz_ui import kind_label, payload_kind_for_event
 from app.models import (
     EventTemplateMapping,
@@ -34,7 +41,11 @@ ENTRY_KIND_LABELS_AR: dict[str, str] = {
     "staff_message": "رسالة للموظفين",
     "scheduled": "تذكير مجدول",
     "webhook": "حدث من ركاز",
+    "hatif_status": "تسليم من هاتف",
+    "hatif_call": "مكالمة هاتف",
 }
+
+RECIPIENT_LABELS_AR["hatif"] = "هاتف"
 
 
 def _staff_phone_set(db: Session) -> set[str]:
@@ -100,6 +111,17 @@ def _phone_matches(client_norm: str, raw: str | None) -> bool:
     return normalize_phone(raw) == client_norm
 
 
+def _split_client_webhooks(events: list[WebhookEvent]) -> tuple[list[WebhookEvent], list[WebhookEvent]]:
+    rekaz: list[WebhookEvent] = []
+    hatif: list[WebhookEvent] = []
+    for ev in events:
+        if is_hatif_webhook(ev.event_name):
+            hatif.append(ev)
+        else:
+            rekaz.append(ev)
+    return rekaz, hatif
+
+
 def _merge_client_row(
     index: dict[str, dict[str, Any]],
     raw_phone: str | None,
@@ -107,6 +129,7 @@ def _merge_client_row(
     *,
     staff_phones: set[str],
     bump_webhook: int = 0,
+    bump_hatif: int = 0,
     bump_message: int = 0,
     bump_scheduled: int = 0,
 ) -> None:
@@ -120,6 +143,7 @@ def _merge_client_row(
             "phone_display": raw_phone or norm,
             "last_at": at,
             "webhook_count": 0,
+            "hatif_count": 0,
             "message_count": 0,
             "scheduled_count": 0,
         }
@@ -129,6 +153,7 @@ def _merge_client_row(
         if at and (not row["last_at"] or at > row["last_at"]):
             row["last_at"] = at
     row["webhook_count"] += bump_webhook
+    row["hatif_count"] += bump_hatif
     row["message_count"] += bump_message
     row["scheduled_count"] += bump_scheduled
 
@@ -146,10 +171,16 @@ def list_clients(
     for ev in db.execute(
         select(WebhookEvent).where(WebhookEvent.phone.isnot(None)).order_by(WebhookEvent.created_at.desc())
     ).scalars():
-        _merge_client_row(
-            index, ev.phone, ev.created_at,
-            staff_phones=staff_phones, bump_webhook=1,
-        )
+        if is_hatif_webhook(ev.event_name):
+            _merge_client_row(
+                index, ev.phone, ev.created_at,
+                staff_phones=staff_phones, bump_hatif=1,
+            )
+        else:
+            _merge_client_row(
+                index, ev.phone, ev.created_at,
+                staff_phones=staff_phones, bump_webhook=1,
+            )
 
     for msg in db.execute(
         select(MessageLog).where(MessageLog.phone.isnot(None)).order_by(MessageLog.created_at.desc())
@@ -207,7 +238,7 @@ def get_client_profile(db: Session, client_phone: str) -> dict[str, Any] | None:
     if client_norm in staff_phones:
         return None
 
-    webhooks = [
+    matched_webhooks = [
         ev for ev in db.execute(
             select(WebhookEvent)
             .where(WebhookEvent.phone.isnot(None))
@@ -215,6 +246,7 @@ def get_client_profile(db: Session, client_phone: str) -> dict[str, Any] | None:
         ).scalars()
         if _phone_matches(client_norm, ev.phone)
     ]
+    rekaz_webhooks, hatif_events = _split_client_webhooks(matched_webhooks)
 
     message_count = sum(
         1
@@ -227,19 +259,26 @@ def get_client_profile(db: Session, client_phone: str) -> dict[str, Any] | None:
         if _phone_matches(client_norm, job.to_phone)
     )
 
-    if not webhooks and not message_count and not scheduled_count:
+    if not rekaz_webhooks and not hatif_events and not message_count and not scheduled_count:
         return None
 
     correlation_refs: set[str] = set()
-    for ev in webhooks:
+    for ev in rekaz_webhooks:
         correlation_refs |= _correlation_refs_from_event(ev)
 
-    display_phone = webhooks[0].phone if webhooks else client_norm
+    display_phone = (
+        rekaz_webhooks[0].phone
+        if rekaz_webhooks
+        else hatif_events[0].phone
+        if hatif_events
+        else client_norm
+    )
 
     return {
         "phone": client_norm,
         "phone_display": display_phone,
-        "webhook_count": len(webhooks),
+        "webhook_count": len(rekaz_webhooks),
+        "hatif_count": len(hatif_events),
         "message_count": message_count,
         "scheduled_count": scheduled_count,
         "correlation_refs": sorted(correlation_refs),
@@ -261,7 +300,7 @@ def get_client_history(
     entries: list[dict[str, Any]] = []
     seen_message_ids: set[str] = set()
 
-    webhooks = [
+    matched_webhooks = [
         ev for ev in db.execute(
             select(WebhookEvent)
             .where(WebhookEvent.phone.isnot(None))
@@ -270,9 +309,10 @@ def get_client_history(
         ).scalars()
         if _phone_matches(client_norm, ev.phone)
     ]
+    rekaz_webhooks, hatif_events = _split_client_webhooks(matched_webhooks)
 
     correlation_refs: set[str] = set()
-    for ev in webhooks:
+    for ev in rekaz_webhooks:
         correlation_refs |= _correlation_refs_from_event(ev)
         pk = payload_kind_for_event(ev.event_name)
         entries.append(
@@ -291,6 +331,9 @@ def get_client_history(
                 "payload_kind_label": kind_label(pk),
             }
         )
+
+    for ev in hatif_events:
+        entries.append(_hatif_event_entry(ev))
 
     # Customer messages
     for msg in db.execute(
@@ -325,8 +368,8 @@ def get_client_history(
                 }
             )
 
-    # Staff/admin messages linked via webhook time window
-    for ev in webhooks:
+    # Staff/admin messages linked via Rekaz webhook time window
+    for ev in rekaz_webhooks:
         if not ev.created_at:
             continue
         window_end = ev.created_at + timedelta(seconds=120)
@@ -394,6 +437,33 @@ def get_client_history(
 
     entries.sort(key=lambda e: e["at"] or datetime.min, reverse=True)
     return entries[:limit]
+
+
+def _hatif_event_entry(ev: WebhookEvent) -> dict[str, Any]:
+    row = hatif_event_row_context(ev)
+    kind = hatif_webhook_kind(ev.event_name)
+    entry_kind = "hatif_status" if kind == "whatsapp_status" else "hatif_call"
+    status_key = "received"
+    status_label = "وارد"
+    if kind == "whatsapp_status":
+        status_raw = (ev.event_name or "").replace("HatifStatus:", "", 1)
+        status_key = status_raw.lower() if status_raw else "received"
+        status_label = delivery_status_label(status_raw)
+    return {
+        "at": ev.created_at,
+        "entry_kind": entry_kind,
+        "entry_kind_label": ENTRY_KIND_LABELS_AR[entry_kind],
+        "recipient_kind": "hatif",
+        "recipient_label": RECIPIENT_LABELS_AR["hatif"],
+        "title": ev.event_name or "—",
+        "subtitle": row.get("summary") or ev.external_event_id or "",
+        "status": status_key,
+        "status_label": status_label,
+        "template_name": row.get("template_name"),
+        "to_phone": ev.phone,
+        "detail_url": f"/dashboard/hatif-events/{ev.id}",
+        "payload_kind_label": hatif_kind_label(kind),
+    }
 
 
 def _message_entry(

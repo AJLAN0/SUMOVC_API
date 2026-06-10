@@ -506,6 +506,9 @@ body {
 .client-row--staff_message { border-right: 3px solid rgba(96, 165, 250, 0.35); }
 .client-row--scheduled { border-right: 3px solid rgba(251, 191, 36, 0.35); }
 .client-row--webhook { border-right: 3px solid rgba(148, 163, 184, 0.3); }
+.client-row--hatif_status { border-right: 3px solid rgba(167, 139, 250, 0.35); }
+.client-row--hatif_call { border-right: 3px solid rgba(129, 140, 248, 0.35); }
+.badge-recipient--hatif { background: rgba(167, 139, 250, 0.15); color: #c4b5fd; }
 
 /* Reminder queue */
 .reminder-tabs {

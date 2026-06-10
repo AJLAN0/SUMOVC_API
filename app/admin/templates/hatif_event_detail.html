@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% from "_macros.html" import page_header %}
+{% block title %}تفاصيل حدث هاتف — SUMO{% endblock %}
+{% block content %}
+<a href="/dashboard/hatif-events" class="btn btn-ghost btn-sm" style="margin-bottom: 1rem;">→ العودة لأحداث هاتف</a>
+{{ page_header('تفاصيل webhook هاتف', '') }}
+<p class="ltr font-mono" style="font-size: 1.1rem; color: var(--accent); margin: -1rem 0 1.5rem;">{{ event.event_name }}</p>
+
+<div class="detail-grid">
+  {% for field in fields %}
+  <div class="detail-item">
+    <dt>{{ field.label }}</dt>
+    <dd class="{% if field.label in ['اسم الحدث', 'المعرّف الخارجي', 'معرّف الرسالة', 'معرّف المحادثة', 'معرّف جهة الاتصال', 'معرّف القناة', 'سجل الرسالة المرتبط'] %}ltr font-mono{% endif %}" {% if field.label in ['اسم الحدث', 'المعرّف الخارجي'] %}dir="ltr"{% endif %}>
+      {% if field.label == 'سجل الرسالة المرتبط' and message_log_id %}
+      <a href="/dashboard/messages/{{ message_log_id }}" class="link-inline ltr" dir="ltr">{{ message_log_id }}</a>
+      {% elif field.label == 'رابط التسجيل' and field.value != '—' %}
+      <a href="{{ field.value }}" class="link-inline ltr" dir="ltr" target="_blank" rel="noopener">{{ field.value }}</a>
+      {% else %}
+      {{ field.value }}
+      {% endif %}
+    </dd>
+  </div>
+  {% endfor %}
+  <div class="detail-item">
+    <dt>وقت الاستلام</dt>
+    <dd class="detail-datetime ltr" dir="ltr">
+      {% if event.created_at %}
+      <span class="table-datetime__date">{{ event.created_at | riyadh_date }}</span>
+      <span class="table-datetime__time">{{ event.created_at | riyadh_time_seconds }}</span>
+      <span class="detail-datetime__tz">{{ display_tz_label }}</span>
+      {% else %}—{% endif %}
+    </dd>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom: 1.5rem;">
+  <div class="card-header"><h3>بيانات الويبهوك الكاملة (JSON)</h3></div>
+  <div class="card-body" style="padding: 0;">
+    <pre class="code-block" style="margin: 0; border: none; border-radius: 0;">{{ payload_pretty }}</pre>
+  </div>
+</div>
+
+<div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+  {% if message_log_id %}
+  <a href="/dashboard/messages/{{ message_log_id }}" class="btn btn-ghost">عرض سجل الرسالة</a>
+  {% endif %}
+  <button hx-delete="/admin/api/events/{{ event.id }}" hx-confirm="هل تريد حذف هذا الحدث؟"
+    onclick="setTimeout(()=>location.href='/dashboard/hatif-events',500)" class="btn btn-danger">حذف الحدث</button>
+</div>
+{% endblock %}

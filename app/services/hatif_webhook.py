@@ -19,6 +19,7 @@ from app.models import MessageLog, WebhookEvent
 HATIF_STATUS_EVENT_PREFIX = "HatifStatus:"
 HATIF_CALL_EVENT_PREFIX = "HatifCall:"
 HATIF_WEBHOOK_EVENT_PREFIX = "Hatif"
+
 from app.utils.signature import verify_voxa_signature
 
 logger = logging.getLogger("app.hatif_webhook")

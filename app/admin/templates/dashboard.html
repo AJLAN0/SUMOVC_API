@@ -216,6 +216,12 @@
           <p class="shortcut-desc">حمولة الويبهوك الكاملة</p>
         </div>
       </a>
+      <a href="/dashboard/hatif-events" class="stat-card-link">
+        <div class="stat-card" style="--stat-accent: #a78bfa;">
+          <div class="label">أحداث هاتف</div>
+          <p class="shortcut-desc">تسليم واتساب والمكالمات</p>
+        </div>
+      </a>
       <a href="/dashboard/locks" class="stat-card-link">
         <div class="stat-card" style="--stat-accent: #94a3b8;">
           <div class="label">قفل التكرار</div>
@@ -225,7 +231,10 @@
     </div>
     <div class="split-layout">
       <div>
-        <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0 0 0.5rem;">أحداث ركاز اليوم: <strong>{{ stats.webhooks_today }}</strong></p>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0 0 0.5rem;">
+          أحداث ركاز اليوم: <strong>{{ stats.webhooks_today }}</strong>
+          — أحداث هاتف اليوم: <strong>{{ stats.hatif_webhooks_today }}</strong>
+        </p>
         {% if stats.chart_labels | length %}
         <canvas id="webhookChart" height="120"></canvas>
         {% endif %}

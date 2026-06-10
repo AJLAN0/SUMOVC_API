@@ -3,7 +3,7 @@
 {% block title %}عميل {{ profile.phone_display }} — SUMO{% endblock %}
 {% block content %}
 <a href="/dashboard/clients" class="btn btn-ghost btn-sm" style="margin-bottom: 1rem;">→ العودة للعملاء</a>
-{{ page_header('سجل العميل', 'رسائل العميل والموظفين والتذكيرات وأحداث ركاز') }}
+{{ page_header('سجل العميل', 'رسائل العميل والموظفين والتذكيرات وأحداث ركاز وهاتف') }}
 
 <div class="stat-grid" style="margin-bottom: 1.5rem; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));">
   <div class="stat-card" style="--stat-accent: var(--accent);">
@@ -13,6 +13,10 @@
   <div class="stat-card" style="--stat-accent: var(--info);">
     <div class="label">أحداث ركاز</div>
     <div class="value">{{ profile.webhook_count }}</div>
+  </div>
+  <div class="stat-card" style="--stat-accent: #a78bfa;">
+    <div class="label">أحداث هاتف</div>
+    <div class="value">{{ profile.hatif_count or 0 }}</div>
   </div>
   <div class="stat-card" style="--stat-accent: var(--success);">
     <div class="label">رسائل العميل</div>
@@ -67,6 +71,8 @@
           <td>
             {% if item.entry_kind == 'webhook' %}
             <span class="badge badge-muted">وارد</span>
+            {% elif item.entry_kind in ['hatif_status', 'hatif_call'] %}
+            <span class="badge badge-muted log-status-badge log-status-badge--{{ item.status }}">{{ item.status_label or item.status }}</span>
             {% else %}
             {{ badge_status(item.status) }}
             {% endif %}

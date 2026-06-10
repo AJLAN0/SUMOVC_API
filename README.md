@@ -51,6 +51,8 @@ After deploy, open `https://sumovcapi-production.up.railway.app/` and sign in. O
 | POST | `/webhooks/rekaz` | Rekaz webhook receiver |
 | POST | `/webhooks/hatif/whatsapp` | Hatif WhatsApp message status webhook |
 | POST | `/webhooks/hatif/call` | Hatif call completed webhook |
+| GET | `/dashboard/events` | Rekaz webhook log (admin) |
+| GET | `/dashboard/hatif-events` | Hatif webhook log (admin) |
 
 ## Testing
 

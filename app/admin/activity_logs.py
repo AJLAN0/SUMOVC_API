@@ -84,7 +84,7 @@ def _entry_detail_url(log_type: str, row_id: str, *, message_log_id: str | None 
         return f"/dashboard/messages/{message_log_id}"
     routes = {
         "webhook": f"/dashboard/events/{row_id}",
-        "hatif_status": f"/dashboard/events/{row_id}",
+        "hatif_status": f"/dashboard/hatif-events/{row_id}",
         "message": f"/dashboard/messages/{row_id}",
         "scheduled": "/dashboard/scheduled",
         "lock": "/dashboard/locks",
