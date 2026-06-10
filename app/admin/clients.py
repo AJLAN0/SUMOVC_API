@@ -19,7 +19,7 @@ from app.models import (
     WebhookEvent,
 )
 from app.services.rekaz import normalize_phone
-from app.services.role_recipients import NOTIFICATION_ROLES
+from app.services.role_recipients import role_display_meta
 from app.services.template_catalog import ENGLISH_TEMPLATE_NAMES
 
 RECIPIENT_LABELS_AR: dict[str, str] = {
@@ -65,7 +65,7 @@ def _staff_role_for_phone(db: Session, phone: str) -> str:
     ).scalars().all()
     for row in rows:
         if normalize_phone(row.phone) == norm:
-            meta = NOTIFICATION_ROLES.get(row.role, {})
+            meta = role_display_meta(row.role)
             return row.label or meta.get("label_ar") or row.role
     return "موظف"
 

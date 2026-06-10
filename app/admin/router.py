@@ -858,7 +858,7 @@ async def mapping_edit_save(
         flash_error(request, "الربط غير موجود.")
         return RedirectResponse("/dashboard/mappings", status_code=302)
 
-    role = staff_role.strip() or "admin"
+    role = staff_role.strip() or "portrait_technician"
     if role not in NOTIFICATION_ROLES:
         flash_error(request, "دور الموظفين غير صالح.")
         return RedirectResponse(f"/dashboard/mappings/{mapping_id}/edit", status_code=302)
@@ -895,7 +895,7 @@ async def mapping_create(
         flash_error(request, "أدخل اسم الحدث واختر القالب.")
         return RedirectResponse("/dashboard/mappings", status_code=302)
 
-    role = staff_role.strip() or "admin"
+    role = staff_role.strip() or "portrait_technician"
     if role not in NOTIFICATION_ROLES:
         flash_error(request, "دور الموظفين غير صالح.")
         return RedirectResponse("/dashboard/mappings", status_code=302)

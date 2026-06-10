@@ -23,7 +23,7 @@
         <label class="form-label">دور الموظفين</label>
         <select name="staff_role" class="form-select">
           {% for role_key, role_meta in roles.items() %}
-          <option value="{{ role_key }}" {% if (mapping.staff_role or 'admin') == role_key %}selected{% endif %}>
+          <option value="{{ role_key }}" {% if (mapping.staff_role or 'portrait_technician') == role_key %}selected{% endif %}>
             {{ role_meta.label_ar }}
           </option>
           {% endfor %}

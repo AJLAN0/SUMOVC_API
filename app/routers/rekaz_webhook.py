@@ -251,6 +251,10 @@ async def _send_staff_notifications(
 
     notification_type = staff_notification_type(event_name, staff_role, external_event_id, payload_kind)
 
+    sent_count = 0
+    skipped_count = 0
+    failed_count = 0
+
     for staff_phone in staff_phones:
         if not _claim_notification_slot(idempotency_ref, notification_type, staff_phone, request_id, db):
             logger.info(
@@ -265,6 +269,7 @@ async def _send_staff_notifications(
                     }
                 },
             )
+            skipped_count += 1
             continue
 
         try:
@@ -291,9 +296,12 @@ async def _send_staff_notifications(
                 fallback_language=fallback_language,
             )
             if not success:
+                failed_count += 1
                 _release_notification_slot(
                     idempotency_ref, notification_type, staff_phone, request_id, db
                 )
+            else:
+                sent_count += 1
             staff_log = MessageLog(
                 phone=staff_phone,
                 template_name=staff_template,
@@ -322,6 +330,7 @@ async def _send_staff_notifications(
                 },
             )
         except Exception:
+            failed_count += 1
             _release_notification_slot(
                 idempotency_ref, notification_type, staff_phone, request_id, db
             )
@@ -335,6 +344,22 @@ async def _send_staff_notifications(
                     }
                 },
             )
+
+    logger.info(
+        "staff_send_batch_complete",
+        extra={
+            "extra": {
+                "request_id": request_id,
+                "event_name": event_name,
+                "staff_role": staff_role,
+                "staff_template": staff_template,
+                "phone_count": len(staff_phones),
+                "sent_count": sent_count,
+                "skipped_count": skipped_count,
+                "failed_count": failed_count,
+            }
+        },
+    )
 
 
 # ── Reminder scheduling helper ──────────────────────────────────────────

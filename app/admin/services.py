@@ -1,4 +1,5 @@
 import json
+import logging
 import time
 from datetime import datetime, timedelta
 from typing import Any
@@ -19,6 +20,8 @@ from app.admin.datetime_ui import riyadh_today_start_utc_naive, to_riyadh
 from app.admin.errors import explain_error, humanize_error
 from app.services.rekaz import EVENT_TEMPLATE_MAP
 from app.services.rekaz_payloads import STAFF_NOTIFICATION_FALLBACKS
+
+logger = logging.getLogger("app.admin.services")
 
 _MAPPING_CACHE: dict[str, str | None] | None = None
 _MAPPING_CACHE_AT: float = 0.0
@@ -46,8 +49,8 @@ DEFAULT_MAPPING_SEEDS: list[dict[str, Any]] = [
         "template_name": "reservation_confirmedddddddd",
         "enabled": False,
         "description": "Enable if Rekaz only sends Created (not Confirmed)",
-        "staff_role": "portrait_technician",
-        "staff_template_name": "admin_reservation_confirmedddd",
+        "staff_role": None,
+        "staff_template_name": None,
     },
     {
         "event_name": "ReservationUpdatedEvent",
@@ -85,7 +88,7 @@ DEFAULT_MAPPING_SEEDS: list[dict[str, Any]] = [
 
 # Additional Rekaz events — disabled until templates are configured in dashboard
 _EXTRA_EVENT_SEEDS: list[dict[str, Any]] = [
-    *[{"event_name": n, "template_name": "", "enabled": False, "description": f"Configure in dashboard — {n}", "staff_role": "admin", "staff_template_name": None} for n in (
+    *[{"event_name": n, "template_name": "", "enabled": False, "description": f"Configure in dashboard — {n}", "staff_role": None, "staff_template_name": None} for n in (
         "ReservationDoneEvent",
         "GiftActivatedEvent", "GiftRedeemedEvent", "GiftCancelledEvent",
         "MerchandiseOrderCanceledEvent",
@@ -109,7 +112,7 @@ def seed_event_mappings(db: Session) -> None:
                     existing.enabled = seed.get("enabled", existing.enabled)
                 elif existing.template_name in ("gifft_send", "sent_gifft"):
                     existing.template_name = seed["template_name"]
-                existing.staff_role = seed.get("staff_role") or existing.staff_role or "admin"
+                existing.staff_role = seed.get("staff_role") or existing.staff_role or "portrait_technician"
                 existing.description = seed.get("description") or existing.description
                 existing.updated_at = datetime.utcnow()
             elif seed["event_name"] == "MerchandiseOrderCompletedEvent" and seed.get("template_name"):
@@ -118,7 +121,7 @@ def seed_event_mappings(db: Session) -> None:
                 elif existing.template_name == "product_done_clint":
                     existing.template_name = seed["template_name"]
                 existing.enabled = seed.get("enabled", existing.enabled)
-                if (existing.staff_role or "admin") == "admin" and seed.get("staff_role"):
+                if (existing.staff_role or "") in ("", "admin") and seed.get("staff_role"):
                     existing.staff_role = seed["staff_role"]
                 elif not (existing.staff_role or "").strip() and seed.get("staff_role"):
                     existing.staff_role = seed["staff_role"]
@@ -129,20 +132,23 @@ def seed_event_mappings(db: Session) -> None:
             elif seed["event_name"] == "ReservationUpdatedEvent":
                 if (existing.template_name or "").strip() in ("", "reservation_updated"):
                     existing.template_name = seed["template_name"]
-                if (existing.staff_role or "admin") == "admin" and seed.get("staff_role"):
+                if (existing.staff_role or "") in ("", "admin") and seed.get("staff_role"):
                     existing.staff_role = seed["staff_role"]
                 if not (existing.staff_template_name or "").strip() and seed.get("staff_template_name"):
                     existing.staff_template_name = seed["staff_template_name"]
                 existing.description = seed.get("description") or existing.description
                 existing.updated_at = datetime.utcnow()
-            elif seed["event_name"] in (
-                "ReservationConfirmedEvent",
-                "ReservationCreatedEvent",
-            ):
-                if (existing.staff_role or "admin") == "admin" and seed.get("staff_role"):
+            elif seed["event_name"] == "ReservationConfirmedEvent":
+                if (existing.staff_role or "") in ("", "admin") and seed.get("staff_role"):
                     existing.staff_role = seed["staff_role"]
                 if not (existing.staff_template_name or "").strip() and seed.get("staff_template_name"):
                     existing.staff_template_name = seed["staff_template_name"]
+                existing.updated_at = datetime.utcnow()
+            elif seed["event_name"] == "ReservationCreatedEvent":
+                # Staff on Created races with Confirmed and blocks idempotency for other phones.
+                existing.staff_role = seed.get("staff_role")
+                existing.staff_template_name = seed.get("staff_template_name")
+                existing.description = seed.get("description") or existing.description
                 existing.updated_at = datetime.utcnow()
             continue
         db.add(
@@ -155,7 +161,29 @@ def seed_event_mappings(db: Session) -> None:
                 staff_template_name=seed.get("staff_template_name"),
             )
         )
+    _migrate_legacy_staff_roles(db)
     db.commit()
+
+
+def _migrate_legacy_staff_roles(db: Session) -> None:
+    """Move old admin staff_role values to the correct technician role."""
+    from app.services.role_recipients import resolve_staff_role
+
+    rows = db.execute(select(EventTemplateMapping)).scalars().all()
+    changed = 0
+    for row in rows:
+        if not (row.staff_template_name or "").strip():
+            continue
+        resolved = resolve_staff_role(row.staff_role, row.event_name)
+        if resolved and resolved != (row.staff_role or "").strip():
+            row.staff_role = resolved
+            row.updated_at = datetime.utcnow()
+            changed += 1
+    if changed:
+        logger.info(
+            "event_mapping_staff_roles_migrated",
+            extra={"extra": {"count": changed}},
+        )
 
 
 def get_staff_notification_for_event(db: Session, event_name: str | None) -> tuple[str | None, str | None]:
@@ -169,9 +197,12 @@ def get_staff_notification_for_event(db: Session, event_name: str | None) -> tup
     row = db.execute(
         select(EventTemplateMapping).where(EventTemplateMapping.event_name == event_name)
     ).scalar_one_or_none()
-    if row and (row.staff_template_name or "").strip():
-        role = row.staff_role or "admin"
-        return role, row.staff_template_name.strip()
+    from app.services.role_recipients import resolve_staff_role
+
+    if row and row.enabled and (row.staff_template_name or "").strip():
+        role = resolve_staff_role(row.staff_role, event_name)
+        if role:
+            return role, row.staff_template_name.strip()
 
     fallback = STAFF_NOTIFICATION_FALLBACKS.get(event_name)
     if fallback:

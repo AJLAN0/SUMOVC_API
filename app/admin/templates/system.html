@@ -46,7 +46,8 @@
     <div class="card-header"><h3>أدوار الإشعارات</h3></div>
     <div class="card-body">
       <p style="color: var(--text-muted); font-size: 0.9rem; margin: 0 0 1rem;">
-        حدّد من يستلم رسائل الموظفين لكل دور. اربط كل حدث ركاز بالدور المناسب من
+        دوران فقط: <strong>فني بورتريه</strong> (حجوزات) و<strong>فني منتجات</strong> (طلبات المتجر).
+        اربط كل حدث ركاز بالدور المناسب من
         <a href="/dashboard/mappings" class="link-inline">ربط الأحداث</a>.
       </p>
       {% for role_key, role_meta in roles.items() %}
@@ -100,7 +101,7 @@
         {% endfor %}
       </dl>
       <p style="font-size: 0.8rem; color: var(--text-dim); margin: 1rem 0 0;">
-        أرقام المشرفين في البيئة تُستخدم فقط كنسخة احتياطية إذا لم تُضف أرقام في لوحة التحكم.
+        أرقام الإشعارات تُدار هنا فقط — دور «مشرف» لم يعد يُستخدم لرسائل واتساب.
       </p>
     </div>
   </div>

@@ -5,26 +5,30 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.config import settings
 from app.models import RoleRecipient
 from app.services.rekaz import normalize_phone
 
 logger = logging.getLogger("app.role_recipients")
 
-NOTIFICATION_ROLES: dict[str, dict[str, str]] = {
-    "admin": {
-        "label_ar": "مشرف",
-        "label_en": "Admin",
+STAFF_NOTIFICATION_ROLES: dict[str, dict[str, str]] = {
+    "portrait_technician": {
+        "label_ar": "فني بورتريه",
+        "label_en": "Portrait Technician",
     },
     "product_technician": {
         "label_ar": "فني منتجات",
         "label_en": "Product Technician",
     },
-    "portrait_technician": {
-        "label_ar": "فني بورتريه",
-        "label_en": "Portrait Technician",
-    },
 }
+
+# Backward-compatible alias (staff alerts use STAFF_NOTIFICATION_ROLES only).
+NOTIFICATION_ROLES = STAFF_NOTIFICATION_ROLES
+
+_LEGACY_ROLE_LABELS: dict[str, dict[str, str]] = {
+    "admin": {"label_ar": "مشرف (قديم)", "label_en": "Admin (legacy)"},
+}
+
+_MERCHANDISE_EVENT_PREFIX = "Merchandise"
 
 DEFAULT_PORTRAIT_TECHNICIAN_PHONES = (
     "966550556381",
@@ -50,7 +54,27 @@ def invalidate_role_cache() -> None:
 
 
 def is_valid_role(role: str) -> bool:
-    return role in NOTIFICATION_ROLES
+    return role in STAFF_NOTIFICATION_ROLES
+
+
+def role_display_meta(role: str | None) -> dict[str, str]:
+    if not role:
+        return {"label_ar": "—", "label_en": "—"}
+    if role in STAFF_NOTIFICATION_ROLES:
+        return STAFF_NOTIFICATION_ROLES[role]
+    return _LEGACY_ROLE_LABELS.get(role, {"label_ar": role, "label_en": role})
+
+
+def resolve_staff_role(role: str | None, event_name: str | None = None) -> str | None:
+    """Map DB / legacy values to portrait_technician or product_technician."""
+    cleaned = (role or "").strip()
+    if cleaned in STAFF_NOTIFICATION_ROLES:
+        return cleaned
+    if event_name and event_name.startswith(_MERCHANDISE_EVENT_PREFIX):
+        return "product_technician"
+    if cleaned == "admin" or not cleaned:
+        return "portrait_technician"
+    return None
 
 
 def get_phones_for_role(db: Session, role: str) -> list[str]:
@@ -63,7 +87,7 @@ def get_phones_for_role(db: Session, role: str) -> list[str]:
         rows = db.execute(
             select(RoleRecipient).where(RoleRecipient.enabled.is_(True))
         ).scalars().all()
-        cache: dict[str, list[str]] = {key: [] for key in NOTIFICATION_ROLES}
+        cache: dict[str, list[str]] = {key: [] for key in STAFF_NOTIFICATION_ROLES}
         for row in rows:
             if row.role in cache:
                 cache[row.role].append(row.phone)
@@ -77,7 +101,7 @@ def list_recipients_by_role(db: Session) -> dict[str, list[dict[str, Any]]]:
     rows = db.execute(
         select(RoleRecipient).order_by(RoleRecipient.role, RoleRecipient.created_at)
     ).scalars().all()
-    grouped: dict[str, list[dict[str, Any]]] = {role: [] for role in NOTIFICATION_ROLES}
+    grouped: dict[str, list[dict[str, Any]]] = {role: [] for role in STAFF_NOTIFICATION_ROLES}
     for row in rows:
         if row.role not in grouped:
             continue
@@ -115,26 +139,11 @@ def add_recipient(
 
 
 def seed_role_recipients(db: Session) -> None:
-    """Seed role phones from env defaults and ensure technician lists exist."""
-    existing = db.execute(select(RoleRecipient.id).limit(1)).scalar_one_or_none()
-    if not existing:
-        admin_phones = settings.admin_numbers()
-        for phone in admin_phones:
-            db.add(RoleRecipient(role="admin", phone=phone, enabled=True))
-        if admin_phones:
-            db.commit()
-            logger.info(
-                "role_recipients_seeded_from_env",
-                extra={"extra": {"role": "admin", "count": len(admin_phones)}},
-            )
-
-    admin_phones = tuple(settings.admin_numbers())
-    if admin_phones:
-        _ensure_role_phones(db, "admin", admin_phones)
+    """Seed default phones for portrait and product technician roles."""
     _ensure_role_phones(db, "portrait_technician", DEFAULT_PORTRAIT_TECHNICIAN_PHONES)
     _ensure_role_phones(db, "product_technician", DEFAULT_PRODUCT_TECHNICIAN_PHONES)
 
-    for role in NOTIFICATION_ROLES:
+    for role in STAFF_NOTIFICATION_ROLES:
         count = len(get_phones_for_role(db, role))
         logger.info(
             "role_recipients_ready",

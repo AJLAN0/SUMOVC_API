@@ -53,7 +53,7 @@
           <td class="ltr font-mono" style="font-size: 0.8rem;">{{ m.template_name or '—' }}</td>
           <td style="font-size: 0.85rem;">
             {% if m.staff_template_name %}
-            {{ roles.get(m.staff_role or 'admin', {}).get('label_ar', m.staff_role) }}
+            {{ roles.get(m.staff_role or 'portrait_technician', {}).get('label_ar', m.staff_role) }}
             <span class="ltr font-mono" dir="ltr" style="display: block; font-size: 0.75rem; color: var(--text-dim);">{{ m.staff_template_name }}</span>
             {% else %}
             <span style="color: var(--text-dim);">—</span>

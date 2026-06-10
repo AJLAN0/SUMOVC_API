@@ -37,10 +37,15 @@ RESERVATION_UPDATE_EVENTS = frozenset({"ReservationUpdatedEvent"})
 # Default staff routing when DB mapping is missing staff_template_name
 STAFF_NOTIFICATION_FALLBACKS: dict[str, tuple[str, str]] = {
     "ReservationConfirmedEvent": ("portrait_technician", "admin_reservation_confirmedddd"),
-    "ReservationCreatedEvent": ("portrait_technician", "admin_reservation_confirmedddd"),
     "ReservationUpdatedEvent": ("portrait_technician", "admin_reservation_confirmedddd"),
     "MerchandiseOrderCompletedEvent": ("product_technician", "product_done_admin"),
 }
+
+# Staff alerts must not fire on these (Rekaz often sends Created before Confirmed).
+STAFF_SKIP_EVENTS = frozenset({
+    "ReservationCreatedEvent",
+    "ReservationDoneEvent",
+})
 
 
 def _ci(d: dict | None, *keys: str):
@@ -233,9 +238,11 @@ def should_send_staff_for_event(
     schedule_changed: bool,
 ) -> bool:
     """Staff alerts follow customer send rules for reservation updates."""
+    if not event_name or event_name in STAFF_SKIP_EVENTS:
+        return False
     if event_name in RESERVATION_UPDATE_EVENTS:
         return schedule_changed
-    return bool(event_name)
+    return True
 
 
 def should_reschedule_reminder_on_update(
