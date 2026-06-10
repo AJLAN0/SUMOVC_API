@@ -195,8 +195,18 @@ def staff_notification_type(
     external_event_id: str | None,
     kind: PayloadKind,
 ) -> str:
-    if kind == PayloadKind.RESERVATION and event_name in RESERVATION_UPDATE_EVENTS and external_event_id:
-        return f"staff_updated:{staff_role}:{external_event_id}"
+    """Idempotency key suffix for staff WhatsApp (mirrors customer rules)."""
+    if kind == PayloadKind.RESERVATION:
+        if event_name in RESERVATION_UPDATE_EVENTS and external_event_id:
+            return f"staff_updated:{staff_role}:{external_event_id}"
+        if event_name in (
+            "ReservationConfirmedEvent",
+            "ReservationCreatedEvent",
+            "ReservationDoneEvent",
+        ):
+            return f"staff_confirmed:{staff_role}"
+        if external_event_id:
+            return f"staff_event:{staff_role}:{external_event_id}"
     if external_event_id:
         return f"staff_event:{staff_role}:{external_event_id}"
     return f"staff_confirmed:{staff_role}"

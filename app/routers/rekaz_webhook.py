@@ -3,14 +3,19 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Header, Request
-from sqlalchemy import update
+from sqlalchemy import delete, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import SessionLocal
 from app.models import MessageLog, ScheduledMessage, SentNotification, WebhookEvent
-from app.services.hatif import format_provider_response, send_whatsapp_template, send_whatsapp_text
+from app.services.hatif import (
+    format_provider_response,
+    send_whatsapp_template,
+    send_whatsapp_template_resilient,
+    send_whatsapp_text,
+)
 from app.services.rekaz import (
     PayloadKind,
     build_template_parameters,
@@ -125,6 +130,38 @@ def _claim_notification_slot(
         return False
 
 
+def _release_notification_slot(
+    reservation_number: str | None,
+    notification_type: str,
+    phone: str,
+    request_id: str,
+    db: Session,
+) -> None:
+    """Remove idempotency lock so a failed Hatif send can be retried."""
+    if not reservation_number:
+        return
+    result = db.execute(
+        delete(SentNotification).where(
+            SentNotification.reservation_number == reservation_number,
+            SentNotification.notification_type == notification_type,
+            SentNotification.phone == phone,
+        )
+    )
+    if result.rowcount:
+        db.commit()
+        logger.info(
+            "idempotency_lock_released",
+            extra={
+                "extra": {
+                    "request_id": request_id,
+                    "reservation_number": reservation_number,
+                    "notification_type": notification_type,
+                    "phone": phone,
+                }
+            },
+        )
+
+
 # ── Staff send helper (role-based) ──────────────────────────────────────
 
 async def _send_staff_notifications(
@@ -141,7 +178,7 @@ async def _send_staff_notifications(
     staff_role, staff_template = get_staff_notification_for_event(db, event_name)
     if not staff_role or not staff_template:
         logger.info(
-            "staff_send_skipped_no_mapping",
+            "staff_notification_no_mapping",
             extra={"extra": {"request_id": request_id, "event_name": event_name}},
         )
         return
@@ -176,19 +213,42 @@ async def _send_staff_notifications(
         },
     )
 
+    from app.services.template_catalog import (
+        default_language_for_template,
+        get_spec_for_template,
+    )
+
     idempotency_ref = (
         fields.get("order_code")
         or fields.get("reservation_number")
         or fields.get("entity_id")
         or external_event_id
     )
-    language = "en"
+    language = default_language_for_template(staff_template)
+    fallback_language = "ar" if language == "en" else "en"
     staff_params = build_template_parameters(
         staff_template,
         fields,
         placeholder=settings.EMPTY_PARAM_PLACEHOLDER,
         db=db,
     )
+    expected = get_spec_for_template(db, staff_template)
+    if expected is not None and len(staff_params) != len(expected):
+        logger.error(
+            "staff_param_count_mismatch",
+            extra={
+                "extra": {
+                    "request_id": request_id,
+                    "template": staff_template,
+                    "expected_count": len(expected),
+                    "actual_count": len(staff_params),
+                    "spec_keys": expected,
+                    "param_values": staff_params,
+                }
+            },
+        )
+        return
+
     notification_type = staff_notification_type(event_name, staff_role, external_event_id, payload_kind)
 
     for staff_phone in staff_phones:
@@ -201,6 +261,7 @@ async def _send_staff_notifications(
                         "staff_phone": staff_phone,
                         "staff_role": staff_role,
                         "idempotency_ref": idempotency_ref,
+                        "notification_type": notification_type,
                     }
                 },
             )
@@ -215,14 +276,24 @@ async def _send_staff_notifications(
                         "staff_phone": staff_phone,
                         "staff_role": staff_role,
                         "template": staff_template,
+                        "language": language,
+                        "fallback_language": fallback_language,
                         "param_count": len(staff_params),
+                        "parameters": staff_params,
                     }
                 },
             )
-            success, response_body, response_json = await send_whatsapp_template(
-                staff_template, staff_phone, staff_params,
+            success, response_body, response_json, language_used = await send_whatsapp_template_resilient(
+                staff_template,
+                staff_phone,
+                staff_params,
                 language=language,
+                fallback_language=fallback_language,
             )
+            if not success:
+                _release_notification_slot(
+                    idempotency_ref, notification_type, staff_phone, request_id, db
+                )
             staff_log = MessageLog(
                 phone=staff_phone,
                 template_name=staff_template,
@@ -245,11 +316,15 @@ async def _send_staff_notifications(
                         "staff_phone": staff_phone,
                         "staff_role": staff_role,
                         "success": success,
+                        "language_used": language_used,
                         "message_log_id": staff_log.id,
                     }
                 },
             )
         except Exception:
+            _release_notification_slot(
+                idempotency_ref, notification_type, staff_phone, request_id, db
+            )
             logger.exception(
                 "staff_send_failed",
                 extra={
@@ -592,9 +667,15 @@ async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
 
             # ── Idempotency: per-domain rules (confirm once, updates/events by webhook Id) ──
             idempotency_key = correlation_id or external_event_id
+            customer_notif_type: str | None = None
+            customer_slot_claimed = False
             if phone and idempotency_key:
-                notif_type = customer_notification_type(event_name, external_event_id, payload_kind)
-                if not _claim_notification_slot(idempotency_key, notif_type, phone, request_id, db):
+                customer_notif_type = customer_notification_type(
+                    event_name, external_event_id, payload_kind
+                )
+                if not _claim_notification_slot(
+                    idempotency_key, customer_notif_type, phone, request_id, db
+                ):
                     is_duplicate = True
                     logger.info(
                         "customer_message_already_sent",
@@ -605,12 +686,14 @@ async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
                                 "phone": phone,
                                 "event_name": event_name,
                                 "payload_kind": payload_kind.value,
-                                "notification_type": notif_type,
+                                "notification_type": customer_notif_type,
                             }
                         },
                     )
                     provider_response = format_provider_response(False, "duplicate_suppressed")
                     status = "duplicate"
+                else:
+                    customer_slot_claimed = True
 
             if not is_duplicate:
                 parameters = build_template_parameters(
@@ -645,6 +728,10 @@ async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
                     provider_response = format_provider_response(
                         False, f"param_count_mismatch:expected={len(expected)},got={len(parameters)}"
                     )
+                    if customer_slot_claimed and customer_notif_type:
+                        _release_notification_slot(
+                            idempotency_key, customer_notif_type, phone, request_id, db
+                        )
                 else:
                     logger.info(
                         "rekaz_sending_template",
@@ -666,6 +753,10 @@ async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
                         )
                         status = "success" if success else "failed"
                         provider_response = format_provider_response(success, response_body)
+                        if not success and customer_slot_claimed and customer_notif_type:
+                            _release_notification_slot(
+                                idempotency_key, customer_notif_type, phone, request_id, db
+                            )
                         logger.info(
                             "rekaz_template_send_result",
                             extra={
@@ -678,6 +769,10 @@ async def _process_rekaz_webhook(payload: dict, request_id: str) -> None:
                             },
                         )
                     except Exception as exc:
+                        if customer_slot_claimed and customer_notif_type:
+                            _release_notification_slot(
+                                idempotency_key, customer_notif_type, phone, request_id, db
+                            )
                         logger.error(
                             "rekaz_template_send_exception",
                             extra={"extra": {"request_id": request_id, "phone": phone, "error": str(exc)}},

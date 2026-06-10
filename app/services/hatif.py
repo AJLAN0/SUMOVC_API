@@ -153,6 +153,57 @@ async def send_whatsapp_template(
     return success, content, response_json
 
 
+async def send_whatsapp_template_resilient(
+    template_name: str,
+    to_number: str,
+    parameters: list[str],
+    *,
+    language: str = "ar",
+    fallback_language: str | None = None,
+    header_image_url: str | None = None,
+) -> tuple[bool, str, dict, str]:
+    """
+    Send a template; on failure optionally retry with *fallback_language*
+    (helps when Hatif has the template under ar vs en).
+    Returns (success, body, response_json, language_used).
+    """
+    primary = (language or "ar").strip().lower()[:2]
+    fallback = (fallback_language or "").strip().lower()[:2] or None
+    if fallback == primary:
+        fallback = None
+
+    success, body, response_json = await send_whatsapp_template(
+        template_name,
+        to_number,
+        parameters,
+        language=primary,
+        header_image_url=header_image_url,
+    )
+    if success or not fallback:
+        return success, body, response_json, primary
+
+    logger.warning(
+        "hatif_send_template_lang_fallback",
+        extra={
+            "extra": {
+                "template": template_name,
+                "to": to_number,
+                "primary_language": primary,
+                "fallback_language": fallback,
+                "primary_status_failed": True,
+            }
+        },
+    )
+    success2, body2, response_json2 = await send_whatsapp_template(
+        template_name,
+        to_number,
+        parameters,
+        language=fallback,
+        header_image_url=header_image_url,
+    )
+    return success2, body2, response_json2, fallback if success2 else primary
+
+
 async def send_whatsapp_text(
     to_number: str,
     text: str,

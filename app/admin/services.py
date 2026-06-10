@@ -173,7 +173,10 @@ def get_staff_notification_for_event(db: Session, event_name: str | None) -> tup
         role = row.staff_role or "admin"
         return role, row.staff_template_name.strip()
 
-    return STAFF_NOTIFICATION_FALLBACKS.get(event_name)
+    fallback = STAFF_NOTIFICATION_FALLBACKS.get(event_name)
+    if fallback:
+        return fallback
+    return None, None
 
 
 def invalidate_mapping_cache() -> None:
