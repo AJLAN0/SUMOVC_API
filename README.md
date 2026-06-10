@@ -40,7 +40,7 @@ python scripts/hash_admin_password.py
 
 Local dev only (optional): `ADMIN_PASSWORD` plain text is hashed at startup if `ADMIN_PASSWORD_HASH` is unset.
 
-After deploy, open `https://YOUR-APP/` and sign in. On **Event Mappings**, enable `ReservationCreatedEvent` if Rekaz does not send `ReservationConfirmedEvent`.
+After deploy, open `https://sumovcapi-production.up.railway.app/` and sign in. On **Event Mappings**, enable `ReservationCreatedEvent` if Rekaz does not send `ReservationConfirmedEvent`.
 
 ## Endpoints
 
@@ -49,7 +49,8 @@ After deploy, open `https://YOUR-APP/` and sign in. On **Event Mappings**, enabl
 | GET | `/` | Admin (redirect to login or dashboard) |
 | GET | `/health` | Health check |
 | POST | `/webhooks/rekaz` | Rekaz webhook receiver |
-| POST | `/webhooks/hatif/whatsapp` | Hatif WhatsApp status webhook |
+| POST | `/webhooks/hatif/whatsapp` | Hatif WhatsApp message status webhook |
+| POST | `/webhooks/hatif/call` | Hatif call completed webhook |
 
 ## Testing
 
@@ -81,23 +82,53 @@ curl -X POST http://127.0.0.1:8000/webhooks/rekaz \
   }'
 ```
 
-### 3. Hatif WhatsApp webhook (no signature if HATIF_WEBHOOK_SECRET is empty)
+### 3. Hatif webhooks
+
+Register these URLs with the Hatif team (also shown on **System** in the admin dashboard):
+
+- WhatsApp: `https://sumovcapi-production.up.railway.app/webhooks/hatif/whatsapp`
+- Calls: `https://sumovcapi-production.up.railway.app/webhooks/hatif/call`
+
+Set `APP_PUBLIC_URL=https://sumovcapi-production.up.railway.app` on Railway so the dashboard shows these URLs.
+
+WhatsApp delivery update (OpenAPI shape):
 
 ```bash
 curl -X POST http://127.0.0.1:8000/webhooks/hatif/whatsapp \
   -H "Content-Type: application/json" \
   -d '{
-    "conversationEventId": "abc-123",
-    "contactId": "c1",
-    "channelId": "ch1",
-    "messageId": "m1",
+    "workspaceId": "ws-uuid",
+    "channelId": "YOUR_HATIF_CHANNEL_ID",
+    "conversationId": "conv-uuid",
+    "contactId": "contact-uuid",
+    "messageId": "wamid.xxx",
     "direction": "Outbound",
+    "messageType": "Template",
     "status": "Delivered",
-    "creationTime": "2025-01-01T10:00:00Z"
+    "creationTime": "2025-01-01T10:00:00Z",
+    "isBillable": true
+  }'
+```
+
+Call completed:
+
+```bash
+curl -X POST http://127.0.0.1:8000/webhooks/hatif/call \
+  -H "Content-Type: application/json" \
+  -d '{
+    "callId": "call-uuid",
+    "workspaceId": "ws-uuid",
+    "channelId": "YOUR_HATIF_CHANNEL_ID",
+    "status": 1,
+    "type": 2,
+    "callerNumber": "966500000000",
+    "calleeNumber": "966511111111",
+    "contactNumber": "966500000000",
+    "creationTime": "2025-01-01T10:05:00Z"
   }'
 ```
 
 ### Notes
 
-- `HATIF_WEBHOOK_SECRET`: Configured by Hatif team on your channel. If not set, leave empty and signature verification is skipped.
+- `HATIF_WEBHOOK_SECRET`: Set on your Hatif channel and in Railway. Hatif sends `X-Voxa-Signature` (HMAC-SHA256 of the raw JSON body). If empty locally, signature verification is skipped.
 - `HATIF_SEND_MODE`: Set to `template` (default) to send WhatsApp templates, or `text` to send plain text messages (useful for testing).

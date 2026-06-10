@@ -4,7 +4,7 @@ import time
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import func, select, text
+from sqlalchemy import func, not_, or_, select, text
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -258,8 +258,18 @@ def get_dashboard_stats(db: Session) -> dict[str, Any]:
     today = _today_start()
     last_24h = datetime.utcnow() - timedelta(hours=24)
 
+    from app.services.hatif_webhook import HATIF_WEBHOOK_EVENT_PREFIX
+
     webhooks_today = db.scalar(
-        select(func.count()).select_from(WebhookEvent).where(WebhookEvent.created_at >= today)
+        select(func.count())
+        .select_from(WebhookEvent)
+        .where(
+            WebhookEvent.created_at >= today,
+            or_(
+                WebhookEvent.event_name.is_(None),
+                not_(WebhookEvent.event_name.like(f"{HATIF_WEBHOOK_EVENT_PREFIX}%")),
+            ),
+        )
     ) or 0
 
     messages_sent_today = db.scalar(

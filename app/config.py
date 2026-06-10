@@ -44,6 +44,8 @@ class Settings:
     HATIF_SCOPE: str = os.getenv("HATIF_SCOPE", "VoxaAPI")
     HATIF_CHANNEL_ID: str = _must("HATIF_CHANNEL_ID")
     HATIF_WEBHOOK_SECRET: str = os.getenv("HATIF_WEBHOOK_SECRET", "")
+    # Public base URL for Hatif webhook registration (production: sumovcapi-production.up.railway.app)
+    APP_PUBLIC_URL: str = os.getenv("APP_PUBLIC_URL", "").strip().rstrip("/")
 
     # Template sending
     HATIF_TEMPLATE_LANGUAGE: str = os.getenv("HATIF_TEMPLATE_LANGUAGE", "ar")
@@ -165,6 +167,7 @@ class Settings:
             "HATIF_SCOPE": self.HATIF_SCOPE,
             "HATIF_CHANNEL_ID": self.HATIF_CHANNEL_ID,
             "HATIF_WEBHOOK_SECRET": "set" if self.HATIF_WEBHOOK_SECRET else "empty",
+            "APP_PUBLIC_URL": self.APP_PUBLIC_URL or "(not set)",
             "HATIF_SEND_MODE": self.HATIF_SEND_MODE,
             "HATIF_TEMPLATE_LANGUAGE": self.HATIF_TEMPLATE_LANGUAGE,
             "EMPTY_PARAM_PLACEHOLDER": self.EMPTY_PARAM_PLACEHOLDER,

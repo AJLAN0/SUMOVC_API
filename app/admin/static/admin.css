@@ -1359,6 +1359,11 @@ body {
 .log-type-badge--message { background: rgba(52, 211, 153, 0.15); color: #6ee7b7; }
 .log-type-badge--scheduled { background: rgba(251, 191, 36, 0.15); color: #fcd34d; }
 .log-type-badge--lock { background: rgba(148, 163, 184, 0.15); color: #cbd5e1; }
+.log-type-badge--hatif_status { background: rgba(167, 139, 250, 0.15); color: #c4b5fd; }
+.log-guide-card--hatif_status .log-guide-card__dot { background: #a78bfa; }
+.log-row--hatif_status { border-right-color: rgba(167, 139, 250, 0.35); }
+.log-status-badge--delivered { background: rgba(52, 211, 153, 0.15); color: #6ee7b7; }
+.log-status-badge--read { background: rgba(96, 165, 250, 0.15); color: #93c5fd; }
 
 .log-status-badge--success,
 .log-status-badge--sent { background: rgba(52, 211, 153, 0.15); color: #6ee7b7; }

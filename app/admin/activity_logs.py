@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, not_, or_, select
 from sqlalchemy.orm import Session
 
 from app.admin.errors import explain_error, humanize_error
@@ -16,9 +17,11 @@ from app.admin.datetime_ui import (
     riyadh_today_start_utc_naive,
 )
 from app.models import MessageLog, ScheduledMessage, SentNotification, WebhookEvent
+from app.services.hatif_webhook import HATIF_STATUS_EVENT_PREFIX, HATIF_WEBHOOK_EVENT_PREFIX
 
 LOG_TYPE_LABELS_AR: dict[str, str] = {
     "webhook": "حدث وارد",
+    "hatif_status": "تسليم هاتف",
     "message": "رسالة واتساب",
     "scheduled": "تذكير مجدول",
     "lock": "منع تكرار",
@@ -26,6 +29,7 @@ LOG_TYPE_LABELS_AR: dict[str, str] = {
 
 LOG_TYPE_DESCRIPTIONS_AR: dict[str, str] = {
     "webhook": "طلب وارد من ركاز (حجز، هدية، منتجات، اشتراك)",
+    "hatif_status": "تحديث حالة التسليم من webhook هاتف (Sent · Delivered · Read · Failed)",
     "message": "محاولة إرسال واتساب عبر هاتف",
     "scheduled": "تذكير مجدول للإرسال لاحقاً",
     "lock": "تسجيل لمنع إرسال نفس الرسالة مرتين",
@@ -36,11 +40,21 @@ STATUS_LABELS_AR: dict[str, str] = {
     "failed": "فشل",
     "pending": "قيد الانتظار",
     "sent": "تم الإرسال",
+    "delivered": "تم التسليم",
+    "read": "تمت القراءة",
     "canceled": "ملغى",
     "duplicate": "مكرر (تم التخطي)",
     "skipped": "تم التخطي (لا تغيير بالموعد)",
     "received": "تم الاستلام",
     "locked": "مقفل",
+}
+
+HATIF_DELIVERY_STATUS_LABELS_AR: dict[str, str] = {
+    "sent": "تم الإرسال",
+    "delivered": "تم التسليم",
+    "read": "تمت القراءة",
+    "pending": "قيد الانتظار",
+    "failed": "فشل التسليم",
 }
 
 _KIND_PREFIXES: dict[str, tuple[str, ...]] = {
@@ -65,14 +79,41 @@ def _webhook_kind_filter(stmt, kind: str | None):
     return stmt.where(or_(*clauses))
 
 
-def _entry_detail_url(log_type: str, row_id: str) -> str:
+def _entry_detail_url(log_type: str, row_id: str, *, message_log_id: str | None = None) -> str:
+    if log_type == "hatif_status" and message_log_id:
+        return f"/dashboard/messages/{message_log_id}"
     routes = {
         "webhook": f"/dashboard/events/{row_id}",
+        "hatif_status": f"/dashboard/events/{row_id}",
         "message": f"/dashboard/messages/{row_id}",
         "scheduled": "/dashboard/scheduled",
         "lock": "/dashboard/locks",
     }
     return routes.get(log_type, "/dashboard/logs")
+
+
+def _exclude_hatif_webhook_events(stmt):
+    return stmt.where(
+        or_(
+            WebhookEvent.event_name.is_(None),
+            not_(WebhookEvent.event_name.like(f"{HATIF_WEBHOOK_EVENT_PREFIX}%")),
+        )
+    )
+
+
+def _hatif_delivery_status_label(status: str | None) -> str:
+    if not status:
+        return "—"
+    return HATIF_DELIVERY_STATUS_LABELS_AR.get(status.lower(), status)
+
+
+def _message_log_id_from_hatif_payload(payload_json: str) -> str | None:
+    try:
+        data = json.loads(payload_json)
+        sumo = data.get("_sumo") or {}
+        return sumo.get("message_log_id")
+    except Exception:
+        return None
 
 
 def _display_lines(
@@ -100,6 +141,7 @@ def _display_lines(
 
 def _webhook_entries(db: Session, phone: str | None, q: str | None, kind: str | None, limit: int) -> list[dict]:
     stmt = select(WebhookEvent).order_by(WebhookEvent.created_at.desc()).limit(limit)
+    stmt = _exclude_hatif_webhook_events(stmt)
     if phone:
         stmt = stmt.where(WebhookEvent.phone.contains(phone))
     if q:
@@ -134,6 +176,81 @@ def _webhook_entries(db: Session, phone: str | None, q: str | None, kind: str | 
                 "payload_kind": pk.value,
                 "detail_url": _entry_detail_url("webhook", row.id),
                 "summary": display["action_text"],
+                **display,
+            }
+        )
+    return out
+
+
+def _hatif_status_entries(
+    db: Session,
+    phone: str | None,
+    status: str | None,
+    q: str | None,
+    limit: int,
+) -> list[dict]:
+    stmt = (
+        select(WebhookEvent)
+        .where(WebhookEvent.event_name.like(f"{HATIF_STATUS_EVENT_PREFIX}%"))
+        .order_by(WebhookEvent.created_at.desc())
+        .limit(limit)
+    )
+    if phone:
+        stmt = stmt.where(WebhookEvent.phone.contains(phone))
+    if status:
+        stmt = stmt.where(WebhookEvent.event_name.ilike(f"{HATIF_STATUS_EVENT_PREFIX}{status}"))
+    if q:
+        stmt = stmt.where(
+            or_(WebhookEvent.payload_json.contains(q), WebhookEvent.external_event_id.contains(q))
+        )
+    rows = db.execute(stmt).scalars().all()
+    out: list[dict] = []
+    for row in rows:
+        delivery_status = (row.event_name or "").replace(HATIF_STATUS_EVENT_PREFIX, "", 1)
+        delivery_key = delivery_status.lower()
+        message_log_id = _message_log_id_from_hatif_payload(row.payload_json)
+        template_name = None
+        try:
+            template_name = (json.loads(row.payload_json).get("_sumo") or {}).get("template_name")
+        except Exception:
+            pass
+
+        status_label = _hatif_delivery_status_label(delivery_status)
+        note = ""
+        if delivery_key == "failed":
+            try:
+                raw = json.loads(row.payload_json)
+                note = humanize_error(raw.get("errorReason") or raw.get("error_reason") or "")
+            except Exception:
+                pass
+
+        display = _display_lines(
+            action="تحديث حالة تسليم من هاتف",
+            primary_label="حالة التسليم",
+            primary_value=status_label,
+            secondary_label="قالب واتساب",
+            secondary_value=template_name,
+            note=note,
+            error_title="فشل التسليم" if delivery_key == "failed" else "",
+            error_message=note if delivery_key == "failed" else "",
+        )
+        out.append(
+            {
+                "log_type": "hatif_status",
+                "log_type_label": LOG_TYPE_LABELS_AR["hatif_status"],
+                "id": row.id,
+                "at": row.created_at,
+                "title": status_label,
+                "subtitle": template_name or "",
+                "phone": row.phone,
+                "status": delivery_key or delivery_status,
+                "status_label": status_label,
+                "kind_label": None,
+                "detail_url": _entry_detail_url(
+                    "hatif_status", row.id, message_log_id=message_log_id
+                ),
+                "summary": display["action_text"],
+                "message_log_id": message_log_id,
                 **display,
             }
         )
@@ -292,11 +409,28 @@ def _lock_entries(db: Session, phone: str | None, q: str | None, limit: int) -> 
 
 def get_activity_stats(db: Session) -> dict[str, int]:
     today = _today_start()
-    return {
-        "webhooks_today": db.scalar(
-            select(func.count()).select_from(WebhookEvent).where(WebhookEvent.created_at >= today)
+    rekaz_webhooks_today = (
+        select(func.count())
+        .select_from(WebhookEvent)
+        .where(
+            WebhookEvent.created_at >= today,
+            or_(
+                WebhookEvent.event_name.is_(None),
+                not_(WebhookEvent.event_name.like(f"{HATIF_WEBHOOK_EVENT_PREFIX}%")),
+            ),
         )
-        or 0,
+    )
+    hatif_status_today = (
+        select(func.count())
+        .select_from(WebhookEvent)
+        .where(
+            WebhookEvent.created_at >= today,
+            WebhookEvent.event_name.like(f"{HATIF_STATUS_EVENT_PREFIX}%"),
+        )
+    )
+    return {
+        "webhooks_today": db.scalar(rekaz_webhooks_today) or 0,
+        "hatif_status_today": db.scalar(hatif_status_today) or 0,
         "messages_sent_today": db.scalar(
             select(func.count())
             .select_from(MessageLog)
@@ -333,6 +467,9 @@ def get_activity_logs(
 
     if log_type in ("all", "webhook"):
         entries.extend(_webhook_entries(db, phone, q, kind if log_type in ("all", "webhook") else None, fetch_limit))
+    if log_type in ("all", "hatif_status"):
+        hatif_status = status if status and status in HATIF_DELIVERY_STATUS_LABELS_AR else None
+        entries.extend(_hatif_status_entries(db, phone, hatif_status, q, fetch_limit))
     if log_type in ("all", "message"):
         msg_status = status if status and status not in ("received", "locked") else None
         entries.extend(_message_entries(db, phone, msg_status, q, fetch_limit))

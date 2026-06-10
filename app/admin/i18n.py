@@ -9,6 +9,7 @@ SETTINGS_LABELS_AR: dict[str, str] = {
     "HATIF_SCOPE": "نطاق هاتف",
     "HATIF_CHANNEL_ID": "قناة واتساب",
     "HATIF_WEBHOOK_SECRET": "سر webhook هاتف",
+    "APP_PUBLIC_URL": "رابط التطبيق العام",
     "HATIF_SEND_MODE": "وضع الإرسال",
     "HATIF_TEMPLATE_LANGUAGE": "لغة القوالب",
     "EMPTY_PARAM_PLACEHOLDER": "بديل الحقل الفارغ",

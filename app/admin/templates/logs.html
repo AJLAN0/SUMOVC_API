@@ -2,10 +2,11 @@
 {% from "_macros.html" import page_header, empty_row, stat_card, log_type_badge, log_status_badge, log_desc_cell, time_group_header, table_datetime %}
 {% block title %}سجل النشاط — SUMO{% endblock %}
 {% block content %}
-{{ page_header('سجل النشاط', 'للمطور — كل العمليات في مكان واحد: ويبهوك · رسائل · تذكيرات · قفل التكرار') }}
+{{ page_header('سجل النشاط', 'للمطور — كل العمليات في مكان واحد: ركاز · تسليم هاتف · رسائل · تذكيرات · قفل التكرار') }}
 
 <div class="stat-grid">
   {{ stat_card('أحداث ركاز اليوم', stats.webhooks_today, '#60a5fa', '#93c5fd') }}
+  {{ stat_card('تحديثات تسليم هاتف اليوم', stats.hatif_status_today, '#a78bfa', '#c4b5fd') }}
   {{ stat_card('رسائل ناجحة اليوم', stats.messages_sent_today, '#34d399', '#34d399') }}
   {{ stat_card('رسائل فاشلة اليوم', stats.messages_failed_today, '#f87171', '#f87171') }}
   {{ stat_card('تذكيرات معلّقة', stats.pending_reminders, '#fbbf24', '#fbbf24') }}

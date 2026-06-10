@@ -202,11 +202,17 @@ async def activity_logs_page(
     log_type_options = [{"value": "all", "label": "الكل"}] + [
         {"value": k, "label": v} for k, v in LOG_TYPE_LABELS_AR.items()
     ]
+    from app.admin.activity_logs import HATIF_DELIVERY_STATUS_LABELS_AR
+
     status_options = [
         {"value": k, "label": v}
         for k, v in STATUS_LABELS_AR.items()
         if k not in ("received", "locked") or log_type in ("all", "webhook", "lock")
     ]
+    if log_type in ("all", "hatif_status"):
+        status_options = [
+            {"value": k, "label": v} for k, v in HATIF_DELIVERY_STATUS_LABELS_AR.items()
+        ]
     kind_options = [{"value": "all", "label": "كل الأنواع"}] + [
         {"value": k.value, "label": PAYLOAD_KIND_LABELS_AR[k]} for k in PAYLOAD_KIND_ORDER if k.value != "unknown"
     ]
@@ -249,8 +255,17 @@ async def events_page(
 ):
     if redir := _auth_or_redirect(auth):
         return redir
+    from sqlalchemy import not_, or_
+
+    from app.services.hatif_webhook import HATIF_WEBHOOK_EVENT_PREFIX
+
     page_size = 25
-    stmt = select(WebhookEvent)
+    stmt = select(WebhookEvent).where(
+        or_(
+            WebhookEvent.event_name.is_(None),
+            not_(WebhookEvent.event_name.like(f"{HATIF_WEBHOOK_EVENT_PREFIX}%")),
+        )
+    )
     if event_name:
         stmt = stmt.where(WebhookEvent.event_name == event_name)
     if phone:
@@ -956,6 +971,9 @@ async def system_page(
     mapping_count = db.scalar(select(func.count()).select_from(EventTemplateMapping)) or 0
     from app.admin.i18n import SETTINGS_LABELS_AR
 
+    from app.services.hatif_webhook import hatif_webhook_urls
+
+    public_base = settings.APP_PUBLIC_URL or str(request.base_url).rstrip("/")
     return render_admin(
         request,
         "system.html",
@@ -968,6 +986,9 @@ async def system_page(
             "runtime_settings": get_runtime_settings_view(db),
             "roles": NOTIFICATION_ROLES,
             "recipients": list_recipients_by_role(db),
+            "hatif_webhooks": hatif_webhook_urls(public_base),
+            "hatif_webhook_secret_set": bool(settings.HATIF_WEBHOOK_SECRET),
+            "hatif_channel_id": settings.HATIF_CHANNEL_ID,
         },
     )
 

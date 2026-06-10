@@ -88,6 +88,47 @@
   </div>
 </div>
 
+<div class="card" style="margin-bottom: 2rem;">
+  <div class="card-header"><h3>Webhooks هاتف (Voxa)</h3></div>
+  <div class="card-body">
+    <p style="color: var(--text-muted); font-size: 0.9rem; margin: 0 0 1rem;">
+      أرسل هذه الروابط لفريق هاتف لتسجيلها على القناة. التوقيع عبر رأس
+      <code class="ltr" dir="ltr">X-Voxa-Signature</code>
+      (HMAC-SHA256) عند ضبط
+      <code class="ltr" dir="ltr">HATIF_WEBHOOK_SECRET</code>.
+    </p>
+    <dl style="margin: 0;">
+      <div style="padding: 0.75rem 0; border-bottom: 1px solid var(--border);">
+        <dt style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 0.35rem;">واتساب — تحديث حالة الرسائل</dt>
+        <dd class="ltr font-mono" dir="ltr" style="margin: 0; word-break: break-all; font-size: 0.85rem;">{{ hatif_webhooks.whatsapp }}</dd>
+      </div>
+      <div style="padding: 0.75rem 0; border-bottom: 1px solid var(--border);">
+        <dt style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 0.35rem;">المكالمات — اكتمال المكالمة</dt>
+        <dd class="ltr font-mono" dir="ltr" style="margin: 0; word-break: break-all; font-size: 0.85rem;">{{ hatif_webhooks.call }}</dd>
+      </div>
+      <div style="display: flex; justify-content: space-between; gap: 1rem; padding: 0.75rem 0; border-bottom: 1px solid var(--border);">
+        <dt style="color: var(--text-muted); font-size: 0.9rem;">سر Webhook</dt>
+        <dd style="margin: 0;">
+          {% if hatif_webhook_secret_set %}
+          <span class="badge badge-success">مضبوط</span>
+          {% else %}
+          <span class="badge badge-danger">غير مضبوط — التحقق معطّل</span>
+          {% endif %}
+        </dd>
+      </div>
+      <div style="display: flex; justify-content: space-between; gap: 1rem; padding: 0.75rem 0;">
+        <dt style="color: var(--text-muted); font-size: 0.9rem;">معرّف القناة</dt>
+        <dd class="ltr font-mono" dir="ltr" style="margin: 0; font-size: 0.8rem; max-width: 65%; word-break: break-all;">{{ hatif_channel_id }}</dd>
+      </div>
+    </dl>
+    <p style="font-size: 0.8rem; color: var(--text-dim); margin: 1rem 0 0;">
+      للحصول على رابط ثابت في الإنتاج، اضبط متغير البيئة
+      <code class="ltr" dir="ltr">APP_PUBLIC_URL</code>
+      (الإنتاج: https://sumovcapi-production.up.railway.app).
+    </p>
+  </div>
+</div>
+
 <div class="split-layout">
   <div class="card">
     <div class="card-header"><h3>الإعدادات (مخفية جزئياً)</h3></div>
